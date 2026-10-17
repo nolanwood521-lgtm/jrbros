@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jr. Bros — Check In</title>
+<meta name="theme-color" content="#0a111f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jr. Bros">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="nonav">
+
+<div class="wrap">
+  <header>
+    <div class="crest" role="img" aria-label="Jr. Bros crest"></div>
+    <div class="brandtext">
+      <div class="kicker">Sundays &middot; 3:00&ndash;4:30</div>
+      <h1>Jr. Bros</h1>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+
+  <div class="card next">
+    <span class="pill" id="nextLabel">Next session</span>
+    <p class="date" id="nextDate">&mdash;</p>
+    <div class="meta" id="nextTime">3:00 &ndash; 4:30 PM</div>
+    <div class="count" id="nextCount">Loading&hellip;</div>
+  </div>
+
+  <div class="card">
+    <h2>Check in</h2>
+    <div class="hint">Tap your child's name. You can change it any time before Sunday.</div>
+    <div class="list" id="checkinList"></div>
+    <div class="empty hide" id="checkinEmpty">Nothing to show yet.</div>
+  </div>
+
+  <div class="card hide" id="benchCard">
+    <h2>Benches</h2>
+    <div class="tsum">
+      <div class="tbox light"><div class="v" id="lightV">0</div><div class="l" id="lightL">Light</div></div>
+      <div class="tbox dark"><div class="v" id="darkV">0</div><div class="l" id="darkL">Dark</div></div>
+    </div>
+  </div>
+
+  <div class="card hide" id="lightCard">
+    <h2>Light</h2>
+    <div class="list" id="lightList"></div>
+  </div>
+
+  <div class="card hide" id="darkCard">
+    <h2>Dark</h2>
+    <div class="list" id="darkList"></div>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function(){
+"use strict";
+var el = JB.el, C = JB.config;
+
+var SESSION = JB.nextSession();
+var players = [], checks = {}, lines = {};
+var busy = {};            // player ids with a write in flight
+
+if(!JB.configured()){
+  el("banner").innerHTML = JB.setupBanner();
+}
+
+/* ---------- load ---------- */
+function refresh(quiet){
+  if(!JB.configured()) return Promise.resolve();
+  if(!SESSION){
+    el("nextLabel").textContent = "Season complete";
+    el("nextDate").textContent = "That's a wrap";
+    el("nextCount").textContent = "";
+    el("checkinEmpty").classList.remove("hide");
+    return Promise.resolve();
+  }
+  if(!quiet) setStatus("Loading…");
+  return Promise.all([
+    JB.select("players", "select=id,name,goalie,sort&order=sort.asc"),
+    JB.select("checkins", "select=player_id,status&session=eq." + SESSION),
+    JB.select("lines_assign", "select=player_id,jersey,pos&session=eq." + SESSION)
+  ]).then(function(res){
+    players = res[0];
+    checks = {}; res[1].forEach(function(r){ checks[r.player_id] = r.status; });
+    lines  = {}; res[2].forEach(function(r){ lines[r.player_id] = r; });
+    render();
+    setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
+  }).catch(function(e){
+    setStatus(JB.explain(e), true);
+  });
+}
+
+function setStatus(msg, isErr){
+  var s = el("status");
+  s.textContent = msg;
+  s.className = "status" + (isErr ? " err" : "");
+}
+
+/* ---------- check in / out ---------- */
+function tap(p, status){
+  if(busy[p.id]) return;
+  var previous = checks[p.id];
+  if(previous === status) return;        // already set that way
+
+  busy[p.id] = true;
+  checks[p.id] = status;                 // show it straight away
+  render();
+
+  JB.upsertCheckin(SESSION, p.id, status).then(function(){
+    delete busy[p.id];
+    render();
+    setStatus("Saved — " + p.name + " is " + (status === "in" ? "in" : "out"));
+    return refresh(true);
+  }).catch(function(e){
+    if(previous) checks[p.id] = previous; else delete checks[p.id];
+    delete busy[p.id];
+    render();
+    setStatus(JB.explain(e), true);
+  });
+}
+
+/* ---------- render ---------- */
+function render(){
+  el("nextLabel").textContent = (SESSION === JB.todayISO()) ? "Today" : "Next session";
+  el("nextDate").textContent = SESSION ? JB.fmt(SESSION, true) : "—";
+  el("nextTime").textContent = C.TIME_LABEL || "3:00 – 4:30 PM";
+
+  var ins = players.filter(function(p){ return checks[p.id] === "in"; });
+  var outs = players.filter(function(p){ return checks[p.id] === "out"; });
+  var waiting = players.length - ins.length - outs.length;
+  el("nextCount").textContent = players.length
+    ? ins.length + " in · " + outs.length + " out" +
+      (waiting ? " · " + waiting + " not answered" : "")
+    : "Loading…";
+
+  var cl = el("checkinList"); cl.innerHTML = "";
+  el("checkinEmpty").classList.toggle("hide", players.length > 0);
+
+  players.forEach(function(p){
+    var st = checks[p.id];
+    var row = document.createElement("div");
+    row.className = "row" + (st === "in" ? " isIn" : st === "out" ? " isOut" : "");
+
+    var nm = document.createElement("div");
+    nm.className = "name"; nm.textContent = p.name;
+    row.appendChild(nm);
+
+    if(p.goalie){
+      var g = document.createElement("span");
+      g.className = "gtag"; g.textContent = "G"; row.appendChild(g);
+    }
+
+    var seg = document.createElement("div"); seg.className = "seg";
+    [["in","In"],["out","Out"]].forEach(function(pair){
+      var b = document.createElement("button");
+      b.className = "btn " + pair[0] + (st === pair[0] ? " on" : "");
+      b.textContent = pair[1];
+      b.disabled = !!busy[p.id] || !JB.configured();
+      b.onclick = function(){ tap(p, pair[0]); };
+      seg.appendChild(b);
+    });
+    row.appendChild(seg);
+    cl.appendChild(row);
+  });
+
+  renderBenches(ins);
+}
+
+function renderBenches(ins){
+  var any = ins.some(function(p){ return lines[p.id] && lines[p.id].jersey; });
+  el("benchCard").classList.toggle("hide", !any);
+  el("lightCard").classList.toggle("hide", !any);
+  el("darkCard").classList.toggle("hide", !any);
+  if(!any) return;
+
+  var t = { light:[], dark:[] };
+  ins.forEach(function(p){
+    var L = lines[p.id];
+    if(L && (L.jersey === "light" || L.jersey === "dark")) t[L.jersey].push(p);
+  });
+
+  function tally(list){
+    var f=0,d=0,g=0,u=0;
+    list.forEach(function(p){
+      var L = lines[p.id] || {};
+      if(p.goalie) g++; else if(L.pos === "f") f++; else if(L.pos === "d") d++; else u++;
+    });
+    var bits = [];
+    if(f) bits.push(f + " F"); if(d) bits.push(d + " D");
+    if(g) bits.push(g + " G"); if(u) bits.push(u + " no pos");
+    return bits.length ? bits.join(" · ") : "nobody yet";
+  }
+  el("lightV").textContent = t.light.length;
+  el("lightL").textContent = "Light — " + tally(t.light);
+  el("darkV").textContent = t.dark.length;
+  el("darkL").textContent = "Dark — " + tally(t.dark);
+
+  function fill(target, list){
+    var box = el(target); box.innerHTML = "";
+    if(!list.length){
+      var e = document.createElement("div");
+      e.className = "empty"; e.textContent = "Nobody assigned"; box.appendChild(e); return;
+    }
+    var rank = function(p){
+      var L = lines[p.id] || {};
+      return p.goalie ? 0 : L.pos === "d" ? 1 : L.pos === "f" ? 2 : 3;
+    };
+    list.slice().sort(function(a,b){ return rank(a) - rank(b) || a.sort - b.sort; })
+      .forEach(function(p){
+        var L = lines[p.id] || {};
+        var row = document.createElement("div"); row.className = "row";
+        var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
+        row.appendChild(nm);
+        var tag = document.createElement("span");
+        if(p.goalie){ tag.className = "pchip g"; tag.textContent = "G"; }
+        else if(L.pos === "f"){ tag.className = "pchip f"; tag.textContent = "FWD"; }
+        else if(L.pos === "d"){ tag.className = "pchip d"; tag.textContent = "DEF"; }
+        else { tag.className = "pchip"; tag.textContent = "—"; }
+        row.appendChild(tag);
+        box.appendChild(row);
+      });
+  }
+  fill("lightList", t.light);
+  fill("darkList", t.dark);
+}
+
+/* ---------- keep it fresh ---------- */
+refresh();
+setInterval(function(){ if(!document.hidden) refresh(true); }, 20000);
+document.addEventListener("visibilitychange", function(){
+  if(!document.hidden) refresh(true);
+});
+
+})();
+</script>
+</body>
+</html>

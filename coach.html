@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jr. Bros — Coach</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0a111f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Jr. Bros Coach">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="crest" role="img" aria-label="Jr. Bros crest"></div>
+    <div class="brandtext">
+      <div class="kicker">Coach</div>
+      <h1>Jr. Bros</h1>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+
+  <!-- ===== passcode gate ===== -->
+  <section id="gate">
+    <div class="card">
+      <h2>Coach passcode</h2>
+      <div class="hint">Checked by the database, not by this page.</div>
+      <div class="addrow">
+        <input id="code" type="password" placeholder="Passcode" autocomplete="current-password"
+               enterkeyhint="go">
+        <button class="btn" id="codeBtn">Unlock</button>
+      </div>
+      <div class="note" id="gateNote"></div>
+    </div>
+  </section>
+
+  <!-- ===== CHECK IN ===== -->
+  <section id="v-checkin" class="hide">
+    <div class="card next">
+      <span class="pill" id="nextLabel">Next session</span>
+      <p class="date" id="nextDate">&mdash;</p>
+      <div class="meta" id="nextTime">3:00 &ndash; 4:30 PM</div>
+      <div class="count" id="nextCount"></div>
+    </div>
+    <div class="card">
+      <h2>Who's in?</h2>
+      <div class="hint">Overrides what parents set.</div>
+      <div class="list" id="checkinList"></div>
+    </div>
+    <div class="card">
+      <h2>Season</h2>
+      <div id="sessionList"></div>
+    </div>
+  </section>
+
+  <!-- ===== LINES ===== -->
+  <section id="v-lines" class="hide">
+    <div class="card">
+      <h2>Lines &middot; <span id="lineDate">&mdash;</span></h2>
+      <div class="tsum">
+        <div class="tbox light"><div class="v" id="lightV">0</div><div class="l" id="lightL">Light</div></div>
+        <div class="tbox dark"><div class="v" id="darkV">0</div><div class="l" id="darkL">Dark</div></div>
+      </div>
+      <div class="note" id="lineNote"></div>
+    </div>
+    <div class="card">
+      <h2>Assign</h2>
+      <div class="hint">Tap a chip to cycle. Jersey: Light &rarr; Dark &rarr; blank. Position: Fwd &rarr; Def &rarr; blank.</div>
+      <div class="list" id="lineList"></div>
+      <div class="empty hide" id="lineEmpty">Nobody is checked in for this session yet.</div>
+    </div>
+    <div class="card">
+      <h2>Tools</h2>
+      <button class="btn ghost" id="autoBtn">Shuffle jerseys evenly</button>
+      <div style="height:8px"></div>
+      <button class="btn ghost" id="clearLinesBtn">Clear this session's lines</button>
+      <div class="note">Parents see the benches on the check-in page as soon as you set them.</div>
+    </div>
+  </section>
+
+  <!-- ===== ROSTER ===== -->
+  <section id="v-roster" class="hide">
+    <div class="card">
+      <h2>Roster &middot; <span id="rosterCount">0</span></h2>
+      <div class="list" id="rosterList"></div>
+      <div class="addrow">
+        <input id="newPlayer" placeholder="Player name" autocomplete="off" enterkeyhint="done">
+        <button class="btn" id="addBtn">Add</button>
+      </div>
+      <div class="note">Add &quot;(G)&quot; after a name to mark a goalie.</div>
+    </div>
+    <div class="card">
+      <h2>Attendance so far</h2>
+      <div class="list" id="attendList"></div>
+      <div class="note" id="attendNote"></div>
+    </div>
+  </section>
+
+  <!-- ===== MONEY ===== -->
+  <section id="v-money" class="hide">
+    <div class="card">
+      <h2>Ice cost</h2>
+      <div class="stats">
+        <div class="stat"><div class="v" id="stTotal">&mdash;</div><div class="l">Season total</div></div>
+        <div class="stat"><div class="v" id="stPer">&mdash;</div><div class="l">Per session</div></div>
+        <div class="stat" id="stBreak"><div class="v">&mdash;</div><div class="l">Break-even / child</div></div>
+        <div class="stat"><div class="v" id="stFee">&mdash;</div><div class="l">Charging / child</div></div>
+      </div>
+      <div class="note" id="breakNote"></div>
+      <div class="addrow">
+        <input id="feeInput" type="number" inputmode="decimal" step="0.01" placeholder="220">
+        <button class="btn" id="feeBtn">Set fee</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Collected</h2>
+      <div class="stats">
+        <div class="stat good"><div class="v" id="stPaid">$0</div><div class="l">Paid in</div></div>
+        <div class="stat bad"><div class="v" id="stOwed">$0</div><div class="l">Outstanding</div></div>
+      </div>
+      <div class="note" id="moneyNote"></div>
+    </div>
+    <div class="card">
+      <h2>Who has paid</h2>
+      <div class="list" id="payList"></div>
+    </div>
+  </section>
+
+  <div class="status" id="status"></div>
+</div>
+
+<nav id="nav" class="hide"><div class="wrap">
+  <button data-v="checkin" class="on">Check in</button>
+  <button data-v="lines">Lines</button>
+  <button data-v="roster">Roster</button>
+  <button data-v="money">Money</button>
+</div></nav>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+<script>
+(function(){
+"use strict";
+var el = JB.el, C = JB.config;
+
+var SESSION = JB.nextSession();
+var CODE = null;
+var players = [], checks = {}, lines = {}, fee = 220;
+var allChecks = {};     // session -> {player_id: status}, for the attendance tally
+
+if(!JB.configured()) el("banner").innerHTML = JB.setupBanner();
+
+/* ---------- gate ---------- */
+function unlock(){
+  var v = el("code").value.trim();
+  if(!v) return;
+  if(!JB.configured()){ el("gateNote").textContent = "Fill in config.js first."; return; }
+  el("gateNote").textContent = "Checking…";
+  JB.rpc("check_code", { p_code: v }).then(function(ok){
+    if(ok === true){
+      CODE = v;
+      try{ sessionStorage.setItem("jrbros_code", v); }catch(e){}
+      el("gate").classList.add("hide");
+      el("nav").classList.remove("hide");
+      show("checkin");
+      refresh();
+    }else{
+      el("gateNote").textContent = "That passcode wasn't right.";
+    }
+  }).catch(function(e){ el("gateNote").textContent = JB.explain(e); });
+}
+el("codeBtn").onclick = unlock;
+el("code").addEventListener("keydown", function(e){ if(e.key === "Enter") unlock(); });
+try{
+  var saved = sessionStorage.getItem("jrbros_code");
+  if(saved){ el("code").value = saved; unlock(); }
+}catch(e){}
+
+/* ---------- nav ---------- */
+function show(v){
+  ["checkin","lines","roster","money"].forEach(function(x){
+    el("v-" + x).classList.toggle("hide", x !== v);
+  });
+  document.querySelectorAll("nav button").forEach(function(b){
+    b.classList.toggle("on", b.dataset.v === v);
+  });
+  window.scrollTo(0,0);
+}
+document.querySelectorAll("nav button").forEach(function(b){
+  b.onclick = function(){ show(b.dataset.v); };
+});
+
+function setStatus(msg, isErr){
+  var s = el("status");
+  s.textContent = msg;
+  s.className = "status" + (isErr ? " err" : "");
+}
+
+/* ---------- data ---------- */
+function refresh(quiet){
+  if(!CODE) return Promise.resolve();
+  if(!quiet) setStatus("Loading…");
+  return Promise.all([
+    JB.select("players", "select=id,name,goalie,sort,paid&order=sort.asc"),
+    JB.select("checkins", "select=session,player_id,status"),
+    JB.select("lines_assign", "select=player_id,jersey,pos&session=eq." + SESSION),
+    JB.rpc("public_fee", {})
+  ]).then(function(res){
+    players = res[0];
+    allChecks = {};
+    res[1].forEach(function(r){
+      (allChecks[r.session] = allChecks[r.session] || {})[r.player_id] = r.status;
+    });
+    checks = allChecks[SESSION] || {};
+    lines = {}; res[2].forEach(function(r){ lines[r.player_id] = r; });
+    fee = parseFloat(res[3]) || 220;
+    render();
+    setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
+  }).catch(function(e){ setStatus(JB.explain(e), true); });
+}
+
+function act(promise, msg){
+  setStatus(msg || "Saving…");
+  return promise.then(function(){ return refresh(true); })
+                .catch(function(e){ setStatus(JB.explain(e), true); });
+}
+
+/* ---------- render ---------- */
+function render(){
+  renderCheckin();
+  renderLines();
+  renderRoster();
+  renderMoney();
+}
+
+function renderCheckin(){
+  el("nextLabel").textContent = SESSION
+    ? (SESSION === JB.todayISO() ? "Today" : "Next session") : "Season complete";
+  el("nextDate").textContent = SESSION ? JB.fmt(SESSION, true) : "That's a wrap";
+  el("nextTime").textContent = C.TIME_LABEL || "3:00 – 4:30 PM";
+
+  var ins = players.filter(function(p){ return checks[p.id] === "in"; }).length;
+  var outs = players.filter(function(p){ return checks[p.id] === "out"; }).length;
+  var waiting = players.length - ins - outs;
+  el("nextCount").textContent = ins + " in · " + outs + " out" +
+    (waiting ? " · " + waiting + " not answered" : "");
+
+  var cl = el("checkinList"); cl.innerHTML = "";
+  players.forEach(function(p){
+    var st = checks[p.id];
+    var row = document.createElement("div");
+    row.className = "row" + (st === "in" ? " isIn" : st === "out" ? " isOut" : "");
+    var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
+    row.appendChild(nm);
+    if(p.goalie){ var g = document.createElement("span"); g.className = "gtag"; g.textContent = "G"; row.appendChild(g); }
+    var seg = document.createElement("div"); seg.className = "seg";
+    [["in","In"],["out","Out"]].forEach(function(pair){
+      var b = document.createElement("button");
+      b.className = "btn " + pair[0] + (st === pair[0] ? " on" : "");
+      b.textContent = pair[1];
+      b.onclick = function(){
+        act(JB.rpc("coach_set_checkin", {
+          p_code: CODE, p_session: SESSION, p_player: p.id,
+          p_status: st === pair[0] ? null : pair[0]
+        }));
+      };
+      seg.appendChild(b);
+    });
+    row.appendChild(seg); cl.appendChild(row);
+  });
+
+  var sl = el("sessionList"); sl.innerHTML = "";
+  var t = JB.todayISO();
+  (C.SESSIONS || []).forEach(function(iso){
+    var n = 0, m = allChecks[iso] || {};
+    for(var k in m){ if(m[k] === "in") n++; }
+    var d = document.createElement("div");
+    d.className = "sess" + (iso < t ? " past" : "");
+    var dot = document.createElement("div");
+    dot.className = "dot" + (Object.keys(m).length ? " done" : "");
+    var lab = document.createElement("div"); lab.className = "d"; lab.textContent = JB.fmt(iso, false);
+    var cnt = document.createElement("div"); cnt.className = "n"; cnt.textContent = n ? n + " in" : "";
+    d.appendChild(dot); d.appendChild(lab); d.appendChild(cnt); sl.appendChild(d);
+  });
+}
+
+function renderLines(){
+  el("lineDate").textContent = SESSION ? JB.fmt(SESSION, false) : "—";
+  var avail = players.filter(function(p){ return checks[p.id] === "in"; });
+  el("lineEmpty").classList.toggle("hide", avail.length > 0);
+
+  var ll = el("lineList"); ll.innerHTML = "";
+  var tally = { light:{f:0,d:0,g:0,u:0,n:0}, dark:{f:0,d:0,g:0,u:0,n:0} }, unassigned = 0;
+
+  avail.forEach(function(p){
+    var L = lines[p.id] || {};
+    if(L.jersey){
+      var t = tally[L.jersey]; t.n++;
+      if(p.goalie) t.g++; else if(L.pos === "d") t.d++; else if(L.pos === "f") t.f++; else t.u++;
+    } else unassigned++;
+
+    var row = document.createElement("div"); row.className = "row";
+    var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
+    row.appendChild(nm);
+
+    var jersey = document.createElement("button");
+    jersey.className = "chip" + (L.jersey === "light" ? " jLight" : L.jersey === "dark" ? " jDark" : "");
+    jersey.textContent = L.jersey === "light" ? "Light" : L.jersey === "dark" ? "Dark" : "Jersey";
+    jersey.onclick = function(){
+      var nextJ = L.jersey === "light" ? "dark" : L.jersey === "dark" ? null : "light";
+      act(JB.rpc("coach_set_line", {
+        p_code: CODE, p_session: SESSION, p_player: p.id,
+        p_jersey: nextJ, p_pos: L.pos || null
+      }));
+    };
+    row.appendChild(jersey);
+
+    var pos = document.createElement("button");
+    if(p.goalie){
+      pos.className = "chip pG"; pos.textContent = "G"; pos.disabled = true;
+    }else{
+      pos.className = "chip" + (L.pos === "f" ? " pF" : L.pos === "d" ? " pD" : "");
+      pos.textContent = L.pos === "f" ? "Fwd" : L.pos === "d" ? "Def" : "Pos";
+      pos.onclick = function(){
+        var nextP = L.pos === "f" ? "d" : L.pos === "d" ? null : "f";
+        act(JB.rpc("coach_set_line", {
+          p_code: CODE, p_session: SESSION, p_player: p.id,
+          p_jersey: L.jersey || null, p_pos: nextP
+        }));
+      };
+    }
+    row.appendChild(pos);
+    ll.appendChild(row);
+  });
+
+  function label(t){
+    var bits = [];
+    if(t.f) bits.push(t.f + " F"); if(t.d) bits.push(t.d + " D");
+    if(t.g) bits.push(t.g + " G"); if(t.u) bits.push(t.u + " no pos");
+    return bits.length ? bits.join(" · ") : "nobody yet";
+  }
+  el("lightV").textContent = tally.light.n;
+  el("lightL").textContent = "Light — " + label(tally.light);
+  el("darkV").textContent = tally.dark.n;
+  el("darkL").textContent = "Dark — " + label(tally.dark);
+
+  var parts = [];
+  if(unassigned) parts.push("<b>" + unassigned + "</b> without a jersey");
+  var gap = Math.abs(tally.light.n - tally.dark.n);
+  if(tally.light.n + tally.dark.n > 0 && gap > 1) parts.push("benches are <b>" + gap + " apart</b>");
+  if(!tally.light.g && !tally.dark.g && avail.some(function(p){ return p.goalie; }))
+    parts.push("no goalie assigned");
+  el("lineNote").innerHTML = parts.length ? parts.join(" · ") : "Both benches are set.";
+}
+
+el("autoBtn").onclick = function(){
+  var avail = players.filter(function(p){ return checks[p.id] === "in"; });
+  var skaters = avail.filter(function(p){ return !p.goalie; });
+  var keepers = avail.filter(function(p){ return p.goalie; });
+  for(var i = skaters.length - 1; i > 0; i--){
+    var j = Math.floor(Math.random() * (i + 1));
+    var tmp = skaters[i]; skaters[i] = skaters[j]; skaters[j] = tmp;
+  }
+  var jobs = [];
+  function assign(p, team){
+    var L = lines[p.id] || {};
+    jobs.push(JB.rpc("coach_set_line", {
+      p_code: CODE, p_session: SESSION, p_player: p.id,
+      p_jersey: team, p_pos: L.pos || null
+    }));
+  }
+  skaters.forEach(function(p, ix){ assign(p, ix % 2 ? "dark" : "light"); });
+  keepers.forEach(function(p, ix){ assign(p, ix % 2 ? "dark" : "light"); });
+  if(!jobs.length){ setStatus("Nobody is checked in yet.", true); return; }
+  act(Promise.all(jobs), "Shuffling…");
+};
+
+el("clearLinesBtn").onclick = function(){
+  if(!confirm("Clear jerseys and positions for " + JB.fmt(SESSION, false) + "?")) return;
+  act(JB.rpc("coach_clear_lines", { p_code: CODE, p_session: SESSION }), "Clearing…");
+};
+
+function renderRoster(){
+  el("rosterCount").textContent = players.length;
+  var rl = el("rosterList"); rl.innerHTML = "";
+  players.forEach(function(p){
+    var row = document.createElement("div"); row.className = "row";
+    var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
+    row.appendChild(nm);
+    if(p.goalie){ var g = document.createElement("span"); g.className = "gtag"; g.textContent = "G"; row.appendChild(g); }
+    var rm = document.createElement("button"); rm.className = "btn sm danger"; rm.textContent = "Remove";
+    rm.onclick = function(){
+      if(!confirm("Remove " + p.name + "? This also removes their check-ins and line assignments.")) return;
+      act(JB.rpc("coach_remove_player", { p_code: CODE, p_player: p.id }), "Removing…");
+    };
+    row.appendChild(rm); rl.appendChild(row);
+  });
+
+  var al = el("attendList"); al.innerHTML = "";
+  var held = (C.SESSIONS || []).filter(function(iso){ return iso < JB.todayISO(); }).length;
+  players.forEach(function(p){
+    var ins = 0;
+    for(var s in allChecks){ if(allChecks[s][p.id] === "in") ins++; }
+    var row = document.createElement("div"); row.className = "row";
+    var nm = document.createElement("div"); nm.className = "name";
+    nm.textContent = p.name;
+    var s2 = document.createElement("span"); s2.className = "sub2";
+    s2.textContent = "  · " + ins + " of " + (held || (C.SESSIONS || []).length) + " skates";
+    nm.appendChild(s2); row.appendChild(nm); al.appendChild(row);
+  });
+  el("attendNote").textContent = held
+    ? held + " sessions have been held so far."
+    : "No sessions held yet — counts show against the full season.";
+}
+
+el("addBtn").onclick = addPlayer;
+el("newPlayer").addEventListener("keydown", function(e){ if(e.key === "Enter") addPlayer(); });
+function addPlayer(){
+  var i = el("newPlayer"), v = i.value.trim();
+  if(!v) return;
+  var goalie = / \(G\)$/i.test(v);
+  act(JB.rpc("coach_add_player", {
+    p_code: CODE, p_name: v.replace(/ \(G\)$/i, ""), p_goalie: goalie
+  }), "Adding…").then(function(){ i.value = ""; });
+}
+
+function renderMoney(){
+  var TOTAL = C.SEASON_TOTAL, PER = C.COST_PER_SESSION, n = players.length;
+  el("stTotal").textContent = JB.money(TOTAL);
+  el("stPer").textContent = JB.money(PER);
+  el("stFee").textContent = JB.money0(fee);
+
+  var breakEven = n > 0 ? TOTAL / n : 0;
+  el("stBreak").querySelector(".v").textContent = n ? JB.money(breakEven) : "—";
+  el("stBreak").className = "stat" + (!n ? "" : (breakEven > fee ? " bad" : " good"));
+
+  var bn = el("breakNote");
+  if(!n){ bn.textContent = "No players loaded."; }
+  else{
+    var collected = n * fee, diff = collected - TOTAL;
+    bn.innerHTML = diff >= 0
+      ? "With <b>" + n + "</b> skaters at " + JB.money0(fee) + ", you collect " + JB.money(collected) +
+        " against " + JB.money(TOTAL) + " of ice — <b>" + JB.money(diff) + " to spare</b>."
+      : "With <b>" + n + "</b> skaters at " + JB.money0(fee) + " you collect " + JB.money(collected) +
+        ", which is <b>" + JB.money(-diff) + " short</b> of the " + JB.money(TOTAL) +
+        " ice bill. Break-even is " + JB.money(breakEven) + " each, or " +
+        Math.ceil(TOTAL / fee) + " skaters at the current fee.";
+  }
+
+  var paidCount = players.filter(function(p){ return p.paid; }).length;
+  el("stPaid").textContent = JB.money0(paidCount * fee);
+  el("stOwed").textContent = JB.money0((n - paidCount) * fee);
+  el("moneyNote").innerHTML = n
+    ? paidCount + " of " + n + " families have paid. " +
+      (paidCount * fee >= TOTAL ? "The ice is <b>fully covered</b>."
+        : "Still <b>" + JB.money(TOTAL - paidCount * fee) + "</b> short of the ice bill.")
+    : "";
+
+  var pl = el("payList"); pl.innerHTML = "";
+  players.forEach(function(p){
+    var row = document.createElement("div"); row.className = "row";
+    var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
+    row.appendChild(nm);
+    var b = document.createElement("button");
+    b.className = "btn sm " + (p.paid ? "in on" : "");
+    b.textContent = p.paid ? "Paid" : "Mark paid";
+    b.onclick = function(){
+      act(JB.rpc("coach_set_paid", { p_code: CODE, p_player: p.id, p_paid: !p.paid }));
+    };
+    row.appendChild(b); pl.appendChild(row);
+  });
+}
+
+el("feeBtn").onclick = function(){
+  var v = parseFloat(el("feeInput").value);
+  if(isNaN(v) || v <= 0) return;
+  act(JB.rpc("coach_set_fee", { p_code: CODE, p_fee: String(v) }), "Saving fee…")
+    .then(function(){ el("feeInput").value = ""; });
+};
+
+setInterval(function(){ if(CODE && !document.hidden) refresh(true); }, 30000);
+
+})();
+</script>
+</body>
+</html>
