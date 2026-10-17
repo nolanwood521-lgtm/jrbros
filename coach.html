@@ -245,21 +245,25 @@ function renderCheckin(){
   el("nextTime").textContent = C.TIME_LABEL || "3:00 – 4:30 PM";
 
   var ins = players.filter(function(p){ return checks[p.id] === "in"; }).length;
+  var maybes = players.filter(function(p){ return checks[p.id] === "maybe"; }).length;
   var outs = players.filter(function(p){ return checks[p.id] === "out"; }).length;
-  var waiting = players.length - ins - outs;
-  el("nextCount").textContent = ins + " in · " + outs + " out" +
+  var waiting = players.length - ins - maybes - outs;
+  el("nextCount").textContent = ins + " in" +
+    (maybes ? " · " + maybes + " maybe" : "") +
+    " · " + outs + " out" +
     (waiting ? " · " + waiting + " not answered" : "");
 
   var cl = el("checkinList"); cl.innerHTML = "";
   players.forEach(function(p){
     var st = checks[p.id];
     var row = document.createElement("div");
-    row.className = "row" + (st === "in" ? " isIn" : st === "out" ? " isOut" : "");
+    row.className = "row" + (st === "in" ? " isIn" : st === "maybe" ? " isMaybe"
+                            : st === "out" ? " isOut" : "");
     var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
     row.appendChild(nm);
     if(p.goalie){ var g = document.createElement("span"); g.className = "gtag"; g.textContent = "G"; row.appendChild(g); }
-    var seg = document.createElement("div"); seg.className = "seg";
-    [["in","In"],["out","Out"]].forEach(function(pair){
+    var seg = document.createElement("div"); seg.className = "seg seg3";
+    [["in","In"],["maybe","Maybe"],["out","Out"]].forEach(function(pair){
       var b = document.createElement("button");
       b.className = "btn " + pair[0] + (st === pair[0] ? " on" : "");
       b.textContent = pair[1];
@@ -292,6 +296,7 @@ function renderCheckin(){
 function renderLines(){
   el("lineDate").textContent = SESSION ? JB.fmt(SESSION, false) : "—";
   var avail = players.filter(function(p){ return checks[p.id] === "in"; });
+  var maybeCount = players.filter(function(p){ return checks[p.id] === "maybe"; }).length;
   el("lineEmpty").classList.toggle("hide", avail.length > 0);
 
   var ll = el("lineList"); ll.innerHTML = "";
@@ -355,6 +360,7 @@ function renderLines(){
   if(tally.light.n + tally.dark.n > 0 && gap > 1) parts.push("benches are <b>" + gap + " apart</b>");
   if(!tally.light.g && !tally.dark.g && avail.some(function(p){ return p.goalie; }))
     parts.push("no goalie assigned");
+  if(maybeCount) parts.push("<b>" + maybeCount + " maybe</b> not on the benches");
   el("lineNote").innerHTML = parts.length ? parts.join(" · ") : "Both benches are set.";
 }
 

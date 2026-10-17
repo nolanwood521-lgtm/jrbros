@@ -44,6 +44,7 @@ h1{margin:4px 0 2px;font-size:26px;letter-spacing:-.02em}
 .row .name{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .sub2{font-size:12px;color:var(--muted);font-weight:400}
 .row.isIn{border-color:rgba(54,211,153,.45)}
+.row.isMaybe{border-color:rgba(245,181,61,.45)}
 .row.isOut{opacity:.5}
 
 .gtag{flex:0 0 auto;font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--warn);
@@ -56,7 +57,10 @@ button{font:inherit;cursor:pointer;border:none;background:none;color:inherit}
 .btn:active{transform:scale(.97)}
 .btn[disabled]{opacity:.5;cursor:default}
 .btn.in.on{background:var(--in);border-color:var(--in);color:#06251a}
+.btn.maybe.on{background:var(--warn);border-color:var(--warn);color:#2d1f05}
 .btn.out.on{background:var(--out);border-color:var(--out);color:#2d0b07}
+/* three choices need to fit beside a name on a phone */
+.seg3 .btn{padding:9px 8px;font-size:12px;min-width:46px}
 .btn.primary{background:var(--ice);border-color:var(--ice);color:#04243a;width:100%;padding:13px;font-size:15px}
 .btn.ghost{width:100%;padding:11px;color:var(--text)}
 .btn.sm{padding:6px 10px;font-size:12px}

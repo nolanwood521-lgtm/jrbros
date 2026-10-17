@@ -35,7 +35,8 @@
 
   <div class="card">
     <h2>Check in</h2>
-    <div class="hint">Tap your child's name. You can change it any time before Sunday.</div>
+    <div class="hint">Tap In, Maybe or Out beside your child, then confirm.
+      You can change it any time before Sunday.</div>
     <div class="list" id="checkinList"></div>
     <div class="empty hide" id="checkinEmpty">Nothing to show yet.</div>
   </div>
@@ -109,10 +110,17 @@ function setStatus(msg, isErr){
 }
 
 /* ---------- check in / out ---------- */
+var WORD = { "in":"IN", "maybe":"a MAYBE", "out":"OUT" };
+
 function tap(p, status){
   if(busy[p.id]) return;
   var previous = checks[p.id];
   if(previous === status) return;        // already set that way
+
+  // name the child in the prompt — that's what catches a tap on the wrong row
+  var ask = "Mark " + p.name + " as " + WORD[status] + " for " +
+            JB.fmt(SESSION, true) + "?";
+  if(!confirm(ask)) return;
 
   busy[p.id] = true;
   checks[p.id] = status;                 // show it straight away
@@ -121,7 +129,8 @@ function tap(p, status){
   JB.upsertCheckin(SESSION, p.id, status).then(function(){
     delete busy[p.id];
     render();
-    setStatus("Saved — " + p.name + " is " + (status === "in" ? "in" : "out"));
+    setStatus("Saved — " + p.name + " is " +
+      (status === "in" ? "in" : status === "maybe" ? "a maybe" : "out"));
     return refresh(true);
   }).catch(function(e){
     if(previous) checks[p.id] = previous; else delete checks[p.id];
@@ -138,10 +147,13 @@ function render(){
   el("nextTime").textContent = C.TIME_LABEL || "3:00 – 4:30 PM";
 
   var ins = players.filter(function(p){ return checks[p.id] === "in"; });
+  var maybes = players.filter(function(p){ return checks[p.id] === "maybe"; });
   var outs = players.filter(function(p){ return checks[p.id] === "out"; });
-  var waiting = players.length - ins.length - outs.length;
+  var waiting = players.length - ins.length - maybes.length - outs.length;
   el("nextCount").textContent = players.length
-    ? ins.length + " in · " + outs.length + " out" +
+    ? ins.length + " in" +
+      (maybes.length ? " · " + maybes.length + " maybe" : "") +
+      " · " + outs.length + " out" +
       (waiting ? " · " + waiting + " not answered" : "")
     : "Loading…";
 
@@ -151,7 +163,8 @@ function render(){
   players.forEach(function(p){
     var st = checks[p.id];
     var row = document.createElement("div");
-    row.className = "row" + (st === "in" ? " isIn" : st === "out" ? " isOut" : "");
+    row.className = "row" + (st === "in" ? " isIn" : st === "maybe" ? " isMaybe"
+                            : st === "out" ? " isOut" : "");
 
     var nm = document.createElement("div");
     nm.className = "name"; nm.textContent = p.name;
@@ -162,8 +175,8 @@ function render(){
       g.className = "gtag"; g.textContent = "G"; row.appendChild(g);
     }
 
-    var seg = document.createElement("div"); seg.className = "seg";
-    [["in","In"],["out","Out"]].forEach(function(pair){
+    var seg = document.createElement("div"); seg.className = "seg seg3";
+    [["in","In"],["maybe","Maybe"],["out","Out"]].forEach(function(pair){
       var b = document.createElement("button");
       b.className = "btn " + pair[0] + (st === pair[0] ? " on" : "");
       b.textContent = pair[1];
