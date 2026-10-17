@@ -10,8 +10,8 @@
    ============================================================ */
 
 window.JRBROS = {
-  SUPABASE_URL:      "https://YOUR-PROJECT-REF.supabase.co",
-  SUPABASE_ANON_KEY: "PASTE-YOUR-ANON-KEY-HERE",
+  SUPABASE_URL:      "https://xkqvjjdqvfyhpepyqwta.supabase.co/rest/v1/",
+  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhrcXZqamRxdmZ5aHBlcHlxd3RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIyNzQ4NDgsImV4cCI6MjEwNzg1MDg0OH0.2Ife3vvQDt5MHqg2mC2tnXCyOtvRS03sVqwEopcHG8o",
 
   TEAM_NAME: "Jr. Bros",
   TIME_LABEL: "3:00 – 4:30 PM",
