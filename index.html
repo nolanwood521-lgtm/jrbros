@@ -13,7 +13,7 @@
 <link rel="manifest" href="manifest.json">
 <link rel="stylesheet" href="style.css">
 </head>
-<body class="nonav">
+<body>
 
 <div class="wrap">
   <header>
@@ -26,41 +26,75 @@
 
   <div id="banner"></div>
 
-  <div class="card next">
-    <span class="pill" id="nextLabel">Next session</span>
-    <p class="date" id="nextDate">&mdash;</p>
-    <div class="meta" id="nextTime">3:00 &ndash; 4:30 PM</div>
-    <div class="count" id="nextCount">Loading&hellip;</div>
-  </div>
-
-  <div class="card">
-    <h2>Check in</h2>
-    <div class="hint">Tap In, Maybe or Out beside your child, then confirm.
-      You can change it any time before Sunday.</div>
-    <div class="list" id="checkinList"></div>
-    <div class="empty hide" id="checkinEmpty">Nothing to show yet.</div>
-  </div>
-
-  <div class="card hide" id="benchCard">
-    <h2>Benches</h2>
-    <div class="tsum">
-      <div class="tbox light"><div class="v" id="lightV">0</div><div class="l" id="lightL">Light</div></div>
-      <div class="tbox dark"><div class="v" id="darkV">0</div><div class="l" id="darkL">Dark</div></div>
+  <!-- ===== CHECK IN ===== -->
+  <section id="v-checkin">
+    <div class="card next">
+      <span class="pill" id="sesLabel">Next session</span>
+      <p class="date" id="sesDate">&mdash;</p>
+      <div class="meta" id="sesTime">3:00 &ndash; 4:30 PM</div>
+      <div class="count" id="sesCount">Loading&hellip;</div>
+      <button class="btn sm hide" id="backBtn" style="margin-top:12px">&larr; Back to next session</button>
     </div>
-  </div>
 
-  <div class="card hide" id="lightCard">
-    <h2>Light</h2>
-    <div class="list" id="lightList"></div>
-  </div>
+    <div class="card">
+      <h2>Check in</h2>
+      <div class="hint">Tap In, Maybe or Out beside your child, then confirm.
+        You can change it any time. To book a day off ahead, open the Schedule tab.</div>
+      <div class="list" id="checkinList"></div>
+      <div class="empty hide" id="checkinEmpty">Nothing to show yet.</div>
+    </div>
 
-  <div class="card hide" id="darkCard">
-    <h2>Dark</h2>
-    <div class="list" id="darkList"></div>
-  </div>
+    <div class="card hide" id="benchCard">
+      <h2>Benches</h2>
+      <div class="tsum">
+        <div class="tbox light"><div class="v" id="lightV">0</div><div class="l" id="lightL">Light</div></div>
+        <div class="tbox dark"><div class="v" id="darkV">0</div><div class="l" id="darkL">Dark</div></div>
+      </div>
+    </div>
+    <div class="card hide" id="lightCard">
+      <h2>Light</h2>
+      <div class="list" id="lightList"></div>
+    </div>
+    <div class="card hide" id="darkCard">
+      <h2>Dark</h2>
+      <div class="list" id="darkList"></div>
+    </div>
+  </section>
+
+  <!-- ===== SCHEDULE ===== -->
+  <section id="v-schedule" class="hide">
+    <div class="card">
+      <h2>Season schedule</h2>
+      <div class="hint">18 Sundays, 3:00&ndash;4:30. Tap any upcoming date to check in or
+        book a day off in advance.</div>
+      <div class="picker" id="picker"></div>
+      <div id="scheduleList"></div>
+    </div>
+    <div class="card">
+      <h2>Away dates</h2>
+      <div class="hint">Everyone already marked Out or Maybe on an upcoming Sunday.</div>
+      <div class="list" id="awayList"></div>
+      <div class="empty hide" id="awayEmpty">Nobody has booked a day off yet.</div>
+    </div>
+  </section>
+
+  <!-- ===== NEWS ===== -->
+  <section id="v-news" class="hide">
+    <div class="card">
+      <h2>From the coach</h2>
+      <div id="annList"></div>
+      <div class="empty hide" id="annEmpty">No announcements right now.</div>
+    </div>
+  </section>
 
   <div class="status" id="status"></div>
 </div>
+
+<nav><div class="wrap">
+  <button data-v="checkin" class="on">Check in</button>
+  <button data-v="schedule">Schedule</button>
+  <button data-v="news">News<span id="newsDot"></span></button>
+</div></nav>
 
 <script src="config.js"></script>
 <script src="app.js"></script>
@@ -68,40 +102,31 @@
 (function(){
 "use strict";
 var el = JB.el, C = JB.config;
+var SESSIONS = C.SESSIONS || [];
 
-var SESSION = JB.nextSession();
-var players = [], checks = {}, lines = {};
-var busy = {};            // player ids with a write in flight
+var SESSION = JB.nextSession();      // the session currently being viewed
+var players = [], allChecks = {}, allLines = {}, anns = [];
+var busy = {};
 
-if(!JB.configured()){
-  el("banner").innerHTML = JB.setupBanner();
-}
+if(!JB.configured()) el("banner").innerHTML = JB.setupBanner();
 
-/* ---------- load ---------- */
-function refresh(quiet){
-  if(!JB.configured()) return Promise.resolve();
-  if(!SESSION){
-    el("nextLabel").textContent = "Season complete";
-    el("nextDate").textContent = "That's a wrap";
-    el("nextCount").textContent = "";
-    el("checkinEmpty").classList.remove("hide");
-    return Promise.resolve();
-  }
-  if(!quiet) setStatus("Loading…");
-  return Promise.all([
-    JB.select("players", "select=id,name,goalie,sort&order=sort.asc"),
-    JB.select("checkins", "select=player_id,status&session=eq." + SESSION),
-    JB.select("lines_assign", "select=player_id,jersey,pos&session=eq." + SESSION)
-  ]).then(function(res){
-    players = res[0];
-    checks = {}; res[1].forEach(function(r){ checks[r.player_id] = r.status; });
-    lines  = {}; res[2].forEach(function(r){ lines[r.player_id] = r; });
-    render();
-    setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
-  }).catch(function(e){
-    setStatus(JB.explain(e), true);
+/* ---------- nav ---------- */
+function show(v){
+  ["checkin","schedule","news"].forEach(function(x){
+    el("v-" + x).classList.toggle("hide", x !== v);
   });
+  document.querySelectorAll("nav button").forEach(function(b){
+    b.classList.toggle("on", b.dataset.v === v);
+  });
+  if(v === "news"){
+    try{ localStorage.setItem("jrbros_seen_news", String(latestAnnTime())); }catch(e){}
+    renderNewsDot();
+  }
+  window.scrollTo(0,0);
 }
+document.querySelectorAll("nav button").forEach(function(b){
+  b.onclick = function(){ show(b.dataset.v); };
+});
 
 function setStatus(msg, isErr){
   var s = el("status");
@@ -109,31 +134,61 @@ function setStatus(msg, isErr){
   s.className = "status" + (isErr ? " err" : "");
 }
 
+/* ---------- data ---------- */
+function refresh(quiet){
+  if(!JB.configured()) return Promise.resolve();
+  if(!quiet) setStatus("Loading…");
+  return Promise.all([
+    JB.select("players", "select=id,name,goalie,sort&order=sort.asc"),
+    JB.select("checkins", "select=session,player_id,status"),
+    JB.select("lines_assign", "select=session,player_id,jersey,pos"),
+    JB.select("announcements", "select=id,body,created_at&order=created_at.desc")
+      .catch(function(){ return []; })    // works before the announcements table exists
+  ]).then(function(res){
+    players = res[0];
+    allChecks = {};
+    res[1].forEach(function(r){
+      (allChecks[r.session] = allChecks[r.session] || {})[r.player_id] = r.status;
+    });
+    allLines = {};
+    res[2].forEach(function(r){
+      (allLines[r.session] = allLines[r.session] || {})[r.player_id] = r;
+    });
+    anns = res[3] || [];
+    render();
+    setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
+  }).catch(function(e){ setStatus(JB.explain(e), true); });
+}
+
+function checksFor(iso){ return allChecks[iso] || {}; }
+function linesFor(iso){ return allLines[iso] || {}; }
+
 /* ---------- check in / out ---------- */
 var WORD = { "in":"IN", "maybe":"a MAYBE", "out":"OUT" };
 
 function tap(p, status){
   if(busy[p.id]) return;
+  var checks = checksFor(SESSION);
   var previous = checks[p.id];
-  if(previous === status) return;        // already set that way
+  if(previous === status) return;
 
-  // name the child in the prompt — that's what catches a tap on the wrong row
-  var ask = "Mark " + p.name + " as " + WORD[status] + " for " +
-            JB.fmt(SESSION, true) + "?";
-  if(!confirm(ask)) return;
+  if(!confirm("Mark " + p.name + " as " + WORD[status] + " for " +
+              JB.fmt(SESSION, true) + "?")) return;
 
+  var iso = SESSION;
   busy[p.id] = true;
-  checks[p.id] = status;                 // show it straight away
+  (allChecks[iso] = allChecks[iso] || {})[p.id] = status;
   render();
 
-  JB.upsertCheckin(SESSION, p.id, status).then(function(){
+  JB.upsertCheckin(iso, p.id, status).then(function(){
     delete busy[p.id];
     render();
     setStatus("Saved — " + p.name + " is " +
-      (status === "in" ? "in" : status === "maybe" ? "a maybe" : "out"));
+      (status === "in" ? "in" : status === "maybe" ? "a maybe" : "out") +
+      " for " + JB.fmt(iso, false));
     return refresh(true);
   }).catch(function(e){
-    if(previous) checks[p.id] = previous; else delete checks[p.id];
+    if(previous) allChecks[iso][p.id] = previous; else delete allChecks[iso][p.id];
     delete busy[p.id];
     render();
     setStatus(JB.explain(e), true);
@@ -142,15 +197,30 @@ function tap(p, status){
 
 /* ---------- render ---------- */
 function render(){
-  el("nextLabel").textContent = (SESSION === JB.todayISO()) ? "Today" : "Next session";
-  el("nextDate").textContent = SESSION ? JB.fmt(SESSION, true) : "—";
-  el("nextTime").textContent = C.TIME_LABEL || "3:00 – 4:30 PM";
+  renderCheckin();
+  renderSchedule();
+  renderNews();
+  renderNewsDot();
+}
 
+function renderCheckin(){
+  var next = JB.nextSession();
+  var isNext = SESSION === next;
+  var past = SESSION && SESSION < JB.todayISO();
+
+  el("sesLabel").textContent = !SESSION ? "Season complete"
+    : SESSION === JB.todayISO() ? "Today"
+    : isNext ? "Next session" : past ? "Past session" : "Upcoming session";
+  el("sesDate").textContent = SESSION ? JB.fmt(SESSION, true) : "That's a wrap";
+  el("sesTime").textContent = C.TIME_LABEL || "3:00 – 4:30 PM";
+  el("backBtn").classList.toggle("hide", isNext || !next);
+
+  var checks = checksFor(SESSION);
   var ins = players.filter(function(p){ return checks[p.id] === "in"; });
   var maybes = players.filter(function(p){ return checks[p.id] === "maybe"; });
   var outs = players.filter(function(p){ return checks[p.id] === "out"; });
   var waiting = players.length - ins.length - maybes.length - outs.length;
-  el("nextCount").textContent = players.length
+  el("sesCount").textContent = players.length
     ? ins.length + " in" +
       (maybes.length ? " · " + maybes.length + " maybe" : "") +
       " · " + outs.length + " out" +
@@ -165,22 +235,19 @@ function render(){
     var row = document.createElement("div");
     row.className = "row" + (st === "in" ? " isIn" : st === "maybe" ? " isMaybe"
                             : st === "out" ? " isOut" : "");
-
     var nm = document.createElement("div");
     nm.className = "name"; nm.textContent = p.name;
     row.appendChild(nm);
-
     if(p.goalie){
       var g = document.createElement("span");
       g.className = "gtag"; g.textContent = "G"; row.appendChild(g);
     }
-
     var seg = document.createElement("div"); seg.className = "seg seg3";
     [["in","In"],["maybe","Maybe"],["out","Out"]].forEach(function(pair){
       var b = document.createElement("button");
       b.className = "btn " + pair[0] + (st === pair[0] ? " on" : "");
       b.textContent = pair[1];
-      b.disabled = !!busy[p.id] || !JB.configured();
+      b.disabled = !!busy[p.id] || !JB.configured() || past;
       b.onclick = function(){ tap(p, pair[0]); };
       seg.appendChild(b);
     });
@@ -191,11 +258,18 @@ function render(){
   renderBenches(ins);
 }
 
+el("backBtn").onclick = function(){
+  SESSION = JB.nextSession();
+  render();
+  window.scrollTo(0,0);
+};
+
 function renderBenches(ins){
+  var lines = linesFor(SESSION);
   var any = ins.some(function(p){ return lines[p.id] && lines[p.id].jersey; });
-  el("benchCard").classList.toggle("hide", !any);
-  el("lightCard").classList.toggle("hide", !any);
-  el("darkCard").classList.toggle("hide", !any);
+  ["benchCard","lightCard","darkCard"].forEach(function(id){
+    el(id).classList.toggle("hide", !any);
+  });
   if(!any) return;
 
   var t = { light:[], dark:[] };
@@ -247,6 +321,120 @@ function renderBenches(ins){
   }
   fill("lightList", t.light);
   fill("darkList", t.dark);
+}
+
+/* ---------- schedule ---------- */
+function openSession(iso){
+  SESSION = iso;
+  show("checkin");
+  render();
+}
+
+function renderSchedule(){
+  var today = JB.todayISO();
+
+  /* quick-jump strip of the next few dates */
+  var pk = el("picker"); pk.innerHTML = "";
+  SESSIONS.filter(function(iso){ return iso >= today; }).slice(0, 8).forEach(function(iso){
+    var parts = iso.split("-");
+    var d = new Date(+parts[0], +parts[1]-1, +parts[2]);
+    var chip = document.createElement("button");
+    chip.className = "dchip" + (iso === SESSION ? " on" : "");
+    var m = document.createElement("div"); m.className = "m";
+    m.textContent = d.toLocaleDateString("en-CA",{month:"short"});
+    var dd = document.createElement("div"); dd.className = "d"; dd.textContent = d.getDate();
+    var s = document.createElement("div"); s.className = "s";
+    var n = 0, c = checksFor(iso);
+    for(var k in c){ if(c[k] === "in") n++; }
+    s.textContent = n ? n + " in" : "";
+    chip.appendChild(m); chip.appendChild(dd); chip.appendChild(s);
+    chip.onclick = function(){ openSession(iso); };
+    pk.appendChild(chip);
+  });
+
+  /* the full season */
+  var sl = el("scheduleList"); sl.innerHTML = "";
+  SESSIONS.forEach(function(iso){
+    var c = checksFor(iso), past = iso < today;
+    var ins = 0, outs = 0, maybes = 0;
+    for(var k in c){
+      if(c[k] === "in") ins++; else if(c[k] === "out") outs++; else if(c[k] === "maybe") maybes++;
+    }
+    var d = document.createElement(past ? "div" : "button");
+    d.className = "sess" + (past ? " past" : "");
+    if(!past){
+      d.style.width = "100%"; d.style.textAlign = "left";
+      d.onclick = function(){ openSession(iso); };
+    }
+    var dot = document.createElement("div");
+    dot.className = "dot" + (Object.keys(c).length ? " done" : "") ;
+    var lab = document.createElement("div"); lab.className = "d";
+    lab.textContent = JB.fmt(iso, false) + (iso === SESSION ? "  ‹ viewing" : "");
+    var cnt = document.createElement("div"); cnt.className = "n";
+    var bits = [];
+    if(ins) bits.push(ins + " in");
+    if(maybes) bits.push(maybes + " maybe");
+    if(outs) bits.push(outs + " out");
+    cnt.textContent = bits.join(" · ");
+    d.appendChild(dot); d.appendChild(lab); d.appendChild(cnt);
+    sl.appendChild(d);
+  });
+
+  /* every date anyone has booked off */
+  var al = el("awayList"); al.innerHTML = "";
+  var rows = [];
+  SESSIONS.filter(function(iso){ return iso >= today; }).forEach(function(iso){
+    var c = checksFor(iso);
+    players.forEach(function(p){
+      if(c[p.id] === "out" || c[p.id] === "maybe")
+        rows.push({ iso: iso, p: p, st: c[p.id] });
+    });
+  });
+  el("awayEmpty").classList.toggle("hide", rows.length > 0);
+  rows.forEach(function(r){
+    var row = document.createElement("div"); row.className = "row";
+    var nm = document.createElement("div"); nm.className = "name";
+    nm.textContent = r.p.name;
+    var s2 = document.createElement("span"); s2.className = "sub2";
+    s2.textContent = "  · " + JB.fmt(r.iso, false);
+    nm.appendChild(s2);
+    row.appendChild(nm);
+    var tag = document.createElement("span");
+    tag.className = "pchip " + (r.st === "out" ? "d" : "");
+    tag.style.color = r.st === "out" ? "var(--out)" : "var(--warn)";
+    tag.textContent = r.st === "out" ? "OUT" : "MAYBE";
+    row.appendChild(tag);
+    al.appendChild(row);
+  });
+}
+
+/* ---------- news ---------- */
+function latestAnnTime(){
+  return anns.length ? new Date(anns[0].created_at).getTime() : 0;
+}
+function renderNewsDot(){
+  var seen = 0;
+  try{ seen = parseInt(localStorage.getItem("jrbros_seen_news") || "0", 10) || 0; }catch(e){}
+  var unread = latestAnnTime() > seen;
+  var dot = el("newsDot");
+  dot.textContent = unread ? " •" : "";
+  dot.style.color = "var(--ice)";
+}
+
+function renderNews(){
+  var box = el("annList"); box.innerHTML = "";
+  el("annEmpty").classList.toggle("hide", anns.length > 0);
+  anns.forEach(function(a, ix){
+    var card = document.createElement("div");
+    card.className = "ann" + (ix === 0 ? " top" : "");
+    var b = document.createElement("div"); b.className = "body"; b.textContent = a.body;
+    var w = document.createElement("div"); w.className = "when";
+    var d = new Date(a.created_at);
+    w.textContent = d.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"}) +
+      " · " + d.toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"});
+    card.appendChild(b); card.appendChild(w);
+    box.appendChild(card);
+  });
 }
 
 /* ---------- keep it fresh ---------- */

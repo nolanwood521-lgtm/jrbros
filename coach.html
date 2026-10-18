@@ -48,6 +48,11 @@
       <div class="count" id="nextCount"></div>
     </div>
     <div class="card">
+      <h2>Session</h2>
+      <div class="hint">Everything on this tab and the Lines tab applies to the date you pick.</div>
+      <div class="picker" id="picker"></div>
+    </div>
+    <div class="card">
       <h2>Who's in?</h2>
       <div class="hint">Overrides what parents set.</div>
       <div class="list" id="checkinList"></div>
@@ -80,6 +85,22 @@
       <div style="height:8px"></div>
       <button class="btn ghost" id="clearLinesBtn">Clear this session's lines</button>
       <div class="note">Parents see the benches on the check-in page as soon as you set them.</div>
+    </div>
+  </section>
+
+  <!-- ===== NEWS ===== -->
+  <section id="v-news" class="hide">
+    <div class="card">
+      <h2>Post an announcement</h2>
+      <div class="hint">Parents see this on the News tab of their page, newest first.</div>
+      <textarea id="annBody" placeholder="Ice is cancelled this Sunday &mdash; arena furnace is down."></textarea>
+      <div style="height:8px"></div>
+      <button class="btn primary" id="annPost">Post to parents</button>
+    </div>
+    <div class="card">
+      <h2>Posted</h2>
+      <div id="annList"></div>
+      <div class="empty hide" id="annEmpty">Nothing posted yet.</div>
     </div>
   </section>
 
@@ -137,6 +158,7 @@
 <nav id="nav" class="hide"><div class="wrap">
   <button data-v="checkin" class="on">Check in</button>
   <button data-v="lines">Lines</button>
+  <button data-v="news">News</button>
   <button data-v="roster">Roster</button>
   <button data-v="money">Money</button>
 </div></nav>
@@ -151,7 +173,9 @@ var el = JB.el, C = JB.config;
 var SESSION = JB.nextSession();
 var CODE = null;
 var players = [], checks = {}, lines = {}, fee = 220;
-var allChecks = {};     // session -> {player_id: status}, for the attendance tally
+var allChecks = {};     // session -> {player_id: status}
+var allLines = {};      // session -> {player_id: row}
+var anns = [];
 
 if(!JB.configured()) el("banner").innerHTML = JB.setupBanner();
 
@@ -183,7 +207,7 @@ try{
 
 /* ---------- nav ---------- */
 function show(v){
-  ["checkin","lines","roster","money"].forEach(function(x){
+  ["checkin","lines","news","roster","money"].forEach(function(x){
     el("v-" + x).classList.toggle("hide", x !== v);
   });
   document.querySelectorAll("nav button").forEach(function(b){
@@ -208,17 +232,24 @@ function refresh(quiet){
   return Promise.all([
     JB.select("players", "select=id,name,goalie,sort,paid&order=sort.asc"),
     JB.select("checkins", "select=session,player_id,status"),
-    JB.select("lines_assign", "select=player_id,jersey,pos&session=eq." + SESSION),
-    JB.rpc("public_fee", {})
+    JB.select("lines_assign", "select=session,player_id,jersey,pos"),
+    JB.rpc("public_fee", {}),
+    JB.select("announcements", "select=id,body,created_at&order=created_at.desc")
+      .catch(function(){ return []; })
   ]).then(function(res){
     players = res[0];
     allChecks = {};
     res[1].forEach(function(r){
       (allChecks[r.session] = allChecks[r.session] || {})[r.player_id] = r.status;
     });
+    allLines = {};
+    res[2].forEach(function(r){
+      (allLines[r.session] = allLines[r.session] || {})[r.player_id] = r;
+    });
     checks = allChecks[SESSION] || {};
-    lines = {}; res[2].forEach(function(r){ lines[r.player_id] = r; });
+    lines = allLines[SESSION] || {};
     fee = parseFloat(res[3]) || 220;
+    anns = res[4] || [];
     render();
     setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
   }).catch(function(e){ setStatus(JB.explain(e), true); });
@@ -232,15 +263,74 @@ function act(promise, msg){
 
 /* ---------- render ---------- */
 function render(){
+  checks = allChecks[SESSION] || {};
+  lines  = allLines[SESSION]  || {};
+  renderPicker();
   renderCheckin();
   renderLines();
+  renderNews();
   renderRoster();
   renderMoney();
 }
 
+function renderPicker(){
+  var pk = el("picker"); if(!pk) return;
+  pk.innerHTML = "";
+  var today = JB.todayISO();
+  (C.SESSIONS || []).forEach(function(iso){
+    var parts = iso.split("-");
+    var dt = new Date(+parts[0], +parts[1]-1, +parts[2]);
+    var chip = document.createElement("button");
+    chip.className = "dchip" + (iso === SESSION ? " on" : "") + (iso < today ? " past" : "");
+    var m = document.createElement("div"); m.className = "m";
+    m.textContent = dt.toLocaleDateString("en-CA",{month:"short"});
+    var d = document.createElement("div"); d.className = "d"; d.textContent = dt.getDate();
+    var s = document.createElement("div"); s.className = "s";
+    var n = 0, c = allChecks[iso] || {};
+    for(var k in c){ if(c[k] === "in") n++; }
+    s.textContent = n ? n + " in" : "";
+    chip.appendChild(m); chip.appendChild(d); chip.appendChild(s);
+    chip.onclick = function(){ SESSION = iso; render(); window.scrollTo(0,0); };
+    pk.appendChild(chip);
+  });
+}
+
+function renderNews(){
+  var box = el("annList"); box.innerHTML = "";
+  el("annEmpty").classList.toggle("hide", anns.length > 0);
+  anns.forEach(function(a, ix){
+    var card = document.createElement("div");
+    card.className = "ann" + (ix === 0 ? " top" : "");
+    var b = document.createElement("div"); b.className = "body"; b.textContent = a.body;
+    var w = document.createElement("div"); w.className = "when";
+    var d = new Date(a.created_at);
+    w.textContent = d.toLocaleDateString("en-CA",{weekday:"short",month:"short",day:"numeric"}) +
+      " \u00b7 " + d.toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"});
+    var del = document.createElement("button");
+    del.className = "btn sm danger del"; del.textContent = "Delete";
+    del.onclick = function(){
+      if(!confirm("Delete this announcement? Parents will stop seeing it.")) return;
+      act(JB.rpc("coach_delete_announcement", { p_code: CODE, p_id: a.id }), "Deleting\u2026");
+    };
+    card.appendChild(b); card.appendChild(w); card.appendChild(del);
+    box.appendChild(card);
+  });
+}
+
+el("annPost").onclick = function(){
+  var t = el("annBody");
+  var v = t.value.trim();
+  if(!v){ setStatus("Write something first.", true); return; }
+  act(JB.rpc("coach_post_announcement", { p_code: CODE, p_body: v }), "Posting\u2026")
+    .then(function(){ t.value = ""; });
+};
+
 function renderCheckin(){
-  el("nextLabel").textContent = SESSION
-    ? (SESSION === JB.todayISO() ? "Today" : "Next session") : "Season complete";
+  var nxt = JB.nextSession();
+  el("nextLabel").textContent = !SESSION ? "Season complete"
+    : SESSION === JB.todayISO() ? "Today"
+    : SESSION === nxt ? "Next session"
+    : SESSION < JB.todayISO() ? "Past session" : "Upcoming session";
   el("nextDate").textContent = SESSION ? JB.fmt(SESSION, true) : "That's a wrap";
   el("nextTime").textContent = C.TIME_LABEL || "3:00 – 4:30 PM";
 
