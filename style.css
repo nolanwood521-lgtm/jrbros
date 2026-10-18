@@ -122,11 +122,12 @@ nav button{flex:1;padding:9px 4px;border-radius:10px;font-size:11px;font-weight:
 nav button.on{background:var(--surface-2);color:var(--ice)}
 
 /* ---- session picker: a scrollable row of dates ---- */
-.picker{display:flex;gap:8px;overflow-x:auto;padding:2px 0 8px;
-  scrollbar-width:none;-webkit-overflow-scrolling:touch}
-.picker::-webkit-scrollbar{display:none}
-.dchip{flex:0 0 auto;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);
-  padding:8px 12px;text-align:center;min-width:74px;transition:.12s;line-height:1.25}
+/* every date visible at once — wraps instead of scrolling off the edge */
+.picker{display:grid;grid-template-columns:repeat(auto-fill,minmax(72px,1fr));
+  gap:8px;padding:2px 0 4px}
+.dchip{border-radius:12px;border:1px solid var(--line);background:var(--surface-2);
+  padding:8px 6px;text-align:center;transition:.12s;line-height:1.25}
+.dchip[disabled]{cursor:default}
 .dchip:active{transform:scale(.97)}
 .dchip .m{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700}
 .dchip .d{font-size:17px;font-weight:700;letter-spacing:-.01em}
