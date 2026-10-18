@@ -37,8 +37,8 @@
 
     <div class="card">
       <h2>Check in</h2>
-      <div class="hint">Tap In, Maybe or Out beside your child, then confirm.
-        Away on a later date? Book it ahead on the Schedule tab.</div>
+      <div class="hint">Tap In, Maybe or Out beside your child. Tap the same button again
+        to clear it. Away on a later date? Book it ahead on the Schedule tab.</div>
       <div class="list" id="checkinList"></div>
       <div class="empty hide" id="checkinEmpty">Nothing to show yet.</div>
     </div>
@@ -184,34 +184,69 @@ function checksFor(iso){ return allChecks[iso] || {}; }
 function linesFor(iso){ return allLines[iso] || {}; }
 
 /* ---------- check in / out ---------- */
-var WORD = { "in":"IN", "maybe":"a MAYBE", "out":"OUT" };
+var WORD = { "in":"in", "maybe":"a maybe", "out":"out" };
 
+/* Tap saves straight away. Tap the lit button again to clear it.
+   No dialogs — the status line offers an Undo instead. */
 function tap(p, status, iso){
   var key = iso + ":" + p.id;
   if(busy[key]) return;
-  var previous = checksFor(iso)[p.id];
-  if(previous === status) return;
 
-  if(!confirm("Mark " + p.name + " as " + WORD[status] + " for " +
-              JB.fmt(iso, true) + "?")) return;
+  var previous = checksFor(iso)[p.id];
+  var target = (previous === status) ? null : status;   // tapping the lit one clears it
 
   busy[key] = true;
-  (allChecks[iso] = allChecks[iso] || {})[p.id] = status;
+  if(target) (allChecks[iso] = allChecks[iso] || {})[p.id] = target;
+  else if(allChecks[iso]) delete allChecks[iso][p.id];
   render();
 
-  JB.upsertCheckin(iso, p.id, status).then(function(){
+  var work = target ? JB.upsertCheckin(iso, p.id, target) : JB.clearCheckin(iso, p.id);
+
+  work.then(function(){
     delete busy[key];
     render();
-    setStatus("Saved — " + p.name + " is " +
-      (status === "in" ? "in" : status === "maybe" ? "a maybe" : "out") +
-      " for " + JB.fmt(iso, false));
-    return refresh(true);
+    var m = target
+      ? p.name + " is " + WORD[target] + " for " + JB.fmt(iso, false)
+      : p.name + " cleared for " + JB.fmt(iso, false);
+    var back = (previous === undefined) ? null : function(){ tapTo(p, previous, iso); };
+    say(m, back);
+    return refresh(true).then(function(){ say(m, back); });
   }).catch(function(e){
-    if(previous) allChecks[iso][p.id] = previous; else delete allChecks[iso][p.id];
+    if(previous) (allChecks[iso] = allChecks[iso] || {})[p.id] = previous;
+    else if(allChecks[iso]) delete allChecks[iso][p.id];
     delete busy[key];
     render();
     setStatus(JB.explain(e), true);
   });
+}
+
+/* used by Undo: force a specific value rather than toggling */
+function tapTo(p, status, iso){
+  var key = iso + ":" + p.id;
+  if(busy[key]) return;
+  busy[key] = true;
+  (allChecks[iso] = allChecks[iso] || {})[p.id] = status;
+  render();
+  JB.upsertCheckin(iso, p.id, status).then(function(){
+    delete busy[key]; render();
+    say(p.name + " put back to " + WORD[status] + " for " + JB.fmt(iso, false), null);
+    return refresh(true);
+  }).catch(function(e){
+    delete busy[key]; render(); setStatus(JB.explain(e), true);
+  });
+}
+
+/* status line with an optional Undo */
+function say(msg, undo){
+  var s = el("status");
+  s.className = "status";
+  s.textContent = msg + "  ";
+  if(undo){
+    var u = document.createElement("button");
+    u.className = "undo"; u.textContent = "Undo";
+    u.onclick = function(){ undo(); };
+    s.appendChild(u);
+  }
 }
 
 /* one roster row with the three buttons, for a given date */
@@ -300,7 +335,7 @@ function renderBenches(ins){
     var f=0,d=0,g=0,u=0;
     list.forEach(function(p){
       var L = lines[p.id] || {};
-      if(p.goalie) g++; else if(L.pos === "f") f++; else if(L.pos === "d") d++; else u++;
+      if(L.pos === "f") f++; else if(L.pos === "d") d++; else if(L.pos === "g") g++; else u++;
     });
     var bits = [];
     if(f) bits.push(f + " F"); if(d) bits.push(d + " D");
@@ -320,7 +355,7 @@ function renderBenches(ins){
     }
     var rank = function(p){
       var L = lines[p.id] || {};
-      return p.goalie ? 0 : L.pos === "d" ? 1 : L.pos === "f" ? 2 : 3;
+      return L.pos === "d" ? 0 : L.pos === "f" ? 1 : 2;
     };
     list.slice().sort(function(a,b){ return rank(a) - rank(b) || a.sort - b.sort; })
       .forEach(function(p){
@@ -329,8 +364,7 @@ function renderBenches(ins){
         var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
         row.appendChild(nm);
         var tag = document.createElement("span");
-        if(p.goalie){ tag.className = "pchip g"; tag.textContent = "G"; }
-        else if(L.pos === "f"){ tag.className = "pchip f"; tag.textContent = "FWD"; }
+        if(L.pos === "f"){ tag.className = "pchip f"; tag.textContent = "FWD"; }
         else if(L.pos === "d"){ tag.className = "pchip d"; tag.textContent = "DEF"; }
         else { tag.className = "pchip"; tag.textContent = "—"; }
         row.appendChild(tag);

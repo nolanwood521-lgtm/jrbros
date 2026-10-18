@@ -48,6 +48,17 @@ JB.upsertCheckin = function(session, playerId, status){
   });
 };
 
+/* Clear a check-in, putting the child back to "not answered". */
+JB.clearCheckin = function(session, playerId){
+  return fetch(API + "/checkins?session=eq." + encodeURIComponent(session) +
+                      "&player_id=eq." + encodeURIComponent(playerId), {
+    method: "DELETE",
+    headers: headers({ "Prefer": "return=minimal" })
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t || r.status); });
+  });
+};
+
 /* Call a coach function. The passcode is checked inside the database. */
 JB.rpc = function(fn, args){
   return fetch(API + "/rpc/" + fn, {

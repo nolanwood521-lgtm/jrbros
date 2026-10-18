@@ -158,6 +158,9 @@ textarea:focus{outline:2px solid var(--ice-dim);outline-offset:1px}
 .empty{color:var(--muted);font-size:14px;text-align:center;padding:18px 0}
 .status{font-size:12px;color:var(--muted);text-align:center;padding:4px 0 14px}
 .status.err{color:var(--out)}
+.undo{color:var(--ice);font-weight:700;text-decoration:underline;font-size:12px;
+  padding:2px 4px;border-radius:6px}
+.undo:active{opacity:.6}
 .banner{border:1px solid rgba(240,107,94,.5);background:rgba(240,107,94,.1);color:#ffd9d4;
   border-radius:12px;padding:14px;margin-bottom:14px;font-size:14px;line-height:1.55}
 .banner b{color:#fff}
