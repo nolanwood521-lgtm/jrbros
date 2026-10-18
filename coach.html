@@ -75,16 +75,19 @@
     </div>
     <div class="card">
       <h2>Assign</h2>
-      <div class="hint">Tap a chip to cycle. Jersey: Light &rarr; Dark &rarr; blank. Position: Fwd &rarr; Def &rarr; blank.</div>
+      <div class="hint">Everyone starts blank. Tap a chip to cycle it.
+        Jersey: Light &rarr; Dark &rarr; blank. Position: Fwd &rarr; Def &rarr; blank.</div>
       <div class="list" id="lineList"></div>
       <div class="empty hide" id="lineEmpty">Nobody is checked in for this session yet.</div>
     </div>
     <div class="card">
       <h2>Tools</h2>
-      <button class="btn ghost" id="autoBtn">Shuffle jerseys evenly</button>
+      <button class="btn ghost" id="autoBtn">Auto-split jerseys (overwrites)</button>
       <div style="height:8px"></div>
       <button class="btn ghost" id="clearLinesBtn">Clear this session's lines</button>
-      <div class="note">Parents see the benches on the check-in page as soon as you set them.</div>
+      <div class="note">Nothing is assigned automatically \u2014 jerseys and positions stay
+        blank until you set them. Parents see the benches on their check-in page as soon as
+        you do.</div>
     </div>
   </section>
 
@@ -129,26 +132,35 @@
       <div class="stats">
         <div class="stat"><div class="v" id="stTotal">&mdash;</div><div class="l">Season total</div></div>
         <div class="stat"><div class="v" id="stPer">&mdash;</div><div class="l">Per session</div></div>
-        <div class="stat" id="stBreak"><div class="v">&mdash;</div><div class="l">Break-even / child</div></div>
-        <div class="stat"><div class="v" id="stFee">&mdash;</div><div class="l">Charging / child</div></div>
+        <div class="stat good"><div class="v" id="stPaid">$0</div><div class="l">Collected</div></div>
+        <div class="stat" id="stNeed"><div class="v">&mdash;</div><div class="l">Still needed</div></div>
       </div>
       <div class="note" id="breakNote"></div>
-      <div class="addrow">
-        <input id="feeInput" type="number" inputmode="decimal" step="0.01" placeholder="220">
-        <button class="btn" id="feeBtn">Set fee</button>
-      </div>
     </div>
+
     <div class="card">
-      <h2>Collected</h2>
+      <h2>Rates</h2>
       <div class="stats">
-        <div class="stat good"><div class="v" id="stPaid">$0</div><div class="l">Paid in</div></div>
-        <div class="stat bad"><div class="v" id="stOwed">$0</div><div class="l">Outstanding</div></div>
+        <div class="stat"><div class="v" id="stFee">&mdash;</div><div class="l">Season / child</div></div>
+        <div class="stat"><div class="v" id="stGame">&mdash;</div><div class="l">Per game</div></div>
       </div>
-      <div class="note" id="moneyNote"></div>
+      <div class="addrow">
+        <input id="feeInput" type="number" inputmode="decimal" step="0.01" placeholder="Season fee">
+        <button class="btn" id="feeBtn">Set</button>
+      </div>
+      <div class="addrow">
+        <input id="rateInput" type="number" inputmode="decimal" step="0.01" placeholder="Per-game rate">
+        <button class="btn" id="rateBtn">Set</button>
+      </div>
+      <div class="note">The per-game rate is only a suggested amount when you record a payment.</div>
     </div>
+
     <div class="card">
       <h2>Who has paid</h2>
+      <div class="hint">Tap the grey chip to switch a family between
+        <b>Season</b>, <b>Per game</b> and <b>N/A</b>. N/A is left out of every total.</div>
       <div class="list" id="payList"></div>
+      <div class="note" id="moneyNote"></div>
     </div>
   </section>
 
@@ -172,7 +184,7 @@ var el = JB.el, C = JB.config;
 
 var SESSION = JB.nextSession();
 var CODE = null;
-var players = [], checks = {}, lines = {}, fee = 220;
+var players = [], checks = {}, lines = {}, fee = 220, gameRate = 20;
 var allChecks = {};     // session -> {player_id: status}
 var allLines = {};      // session -> {player_id: row}
 var anns = [];
@@ -230,10 +242,11 @@ function refresh(quiet){
   if(!CODE) return Promise.resolve();
   if(!quiet) setStatus("Loading…");
   return Promise.all([
-    JB.select("players", "select=id,name,goalie,sort,paid&order=sort.asc"),
+    JB.select("players", "select=id,name,goalie,sort,paid,pay_type,paid_amount&order=sort.asc"),
     JB.select("checkins", "select=session,player_id,status"),
     JB.select("lines_assign", "select=session,player_id,jersey,pos"),
     JB.rpc("public_fee", {}),
+    JB.rpc("public_game_rate", {}).catch(function(){ return null; }),
     JB.select("announcements", "select=id,body,created_at&order=created_at.desc")
       .catch(function(){ return []; })
   ]).then(function(res){
@@ -249,7 +262,8 @@ function refresh(quiet){
     checks = allChecks[SESSION] || {};
     lines = allLines[SESSION] || {};
     fee = parseFloat(res[3]) || 220;
-    anns = res[4] || [];
+    gameRate = parseFloat(res[4]) || 20;
+    anns = res[5] || [];
     render();
     setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
   }).catch(function(e){ setStatus(JB.explain(e), true); });
@@ -396,12 +410,16 @@ function renderLines(){
     var L = lines[p.id] || {};
     if(L.jersey){
       var t = tally[L.jersey]; t.n++;
-      if(p.goalie) t.g++; else if(L.pos === "d") t.d++; else if(L.pos === "f") t.f++; else t.u++;
+      if(L.pos === "d") t.d++; else if(L.pos === "f") t.f++; else t.u++;
     } else unassigned++;
 
     var row = document.createElement("div"); row.className = "row";
     var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
     row.appendChild(nm);
+    if(p.goalie){
+      var gb = document.createElement("span");
+      gb.className = "gtag"; gb.textContent = "G"; row.appendChild(gb);
+    }
 
     var jersey = document.createElement("button");
     jersey.className = "chip" + (L.jersey === "light" ? " jLight" : L.jersey === "dark" ? " jDark" : "");
@@ -416,19 +434,15 @@ function renderLines(){
     row.appendChild(jersey);
 
     var pos = document.createElement("button");
-    if(p.goalie){
-      pos.className = "chip pG"; pos.textContent = "G"; pos.disabled = true;
-    }else{
-      pos.className = "chip" + (L.pos === "f" ? " pF" : L.pos === "d" ? " pD" : "");
-      pos.textContent = L.pos === "f" ? "Fwd" : L.pos === "d" ? "Def" : "Pos";
-      pos.onclick = function(){
-        var nextP = L.pos === "f" ? "d" : L.pos === "d" ? null : "f";
-        act(JB.rpc("coach_set_line", {
-          p_code: CODE, p_session: SESSION, p_player: p.id,
-          p_jersey: L.jersey || null, p_pos: nextP
-        }));
-      };
-    }
+    pos.className = "chip" + (L.pos === "f" ? " pF" : L.pos === "d" ? " pD" : "");
+    pos.textContent = L.pos === "f" ? "Fwd" : L.pos === "d" ? "Def" : "Pos";
+    pos.onclick = function(){
+      var nextP = L.pos === "f" ? "d" : L.pos === "d" ? null : "f";
+      act(JB.rpc("coach_set_line", {
+        p_code: CODE, p_session: SESSION, p_player: p.id,
+        p_jersey: L.jersey || null, p_pos: nextP
+      }));
+    };
     row.appendChild(pos);
     ll.appendChild(row);
   });
@@ -448,14 +462,17 @@ function renderLines(){
   if(unassigned) parts.push("<b>" + unassigned + "</b> without a jersey");
   var gap = Math.abs(tally.light.n - tally.dark.n);
   if(tally.light.n + tally.dark.n > 0 && gap > 1) parts.push("benches are <b>" + gap + " apart</b>");
-  if(!tally.light.g && !tally.dark.g && avail.some(function(p){ return p.goalie; }))
-    parts.push("no goalie assigned");
   if(maybeCount) parts.push("<b>" + maybeCount + " maybe</b> not on the benches");
   el("lineNote").innerHTML = parts.length ? parts.join(" · ") : "Both benches are set.";
 }
 
 el("autoBtn").onclick = function(){
   var avail = players.filter(function(p){ return checks[p.id] === "in"; });
+  if(!avail.length){ setStatus("Nobody is checked in yet.", true); return; }
+  if(!confirm("Randomly reassign Light/Dark for all " + avail.length +
+              " checked-in skaters on " + JB.fmt(SESSION, false) +
+              "?\n\nThis overwrites jerseys you set by hand. Positions are left alone."))
+    return;
   var skaters = avail.filter(function(p){ return !p.goalie; });
   var keepers = avail.filter(function(p){ return p.goalie; });
   for(var i = skaters.length - 1; i > 0; i--){
@@ -526,49 +543,107 @@ function addPlayer(){
 }
 
 function renderMoney(){
-  var TOTAL = C.SEASON_TOTAL, PER = C.COST_PER_SESSION, n = players.length;
+  var TOTAL = C.SEASON_TOTAL, PER = C.COST_PER_SESSION;
+
+  var season = players.filter(function(p){ return (p.pay_type || "season") === "season"; });
+  var perGame = players.filter(function(p){ return p.pay_type === "game"; });
+  var na = players.filter(function(p){ return p.pay_type === "na"; });
+
+  var seasonPaid = season.filter(function(p){ return p.paid; });
+  var gameTotal = perGame.reduce(function(s,p){ return s + (parseFloat(p.paid_amount) || 0); }, 0);
+  var collected = seasonPaid.length * fee + gameTotal;
+  var needed = TOTAL - collected;
+
   el("stTotal").textContent = JB.money(TOTAL);
   el("stPer").textContent = JB.money(PER);
+  el("stPaid").textContent = JB.money0(collected);
   el("stFee").textContent = JB.money0(fee);
+  el("stGame").textContent = JB.money0(gameRate);
+  el("stNeed").querySelector(".v").textContent = JB.money(needed > 0 ? needed : 0);
+  el("stNeed").className = "stat" + (needed > 0 ? " bad" : " good");
 
-  var breakEven = n > 0 ? TOTAL / n : 0;
-  el("stBreak").querySelector(".v").textContent = n ? JB.money(breakEven) : "—";
-  el("stBreak").className = "stat" + (!n ? "" : (breakEven > fee ? " bad" : " good"));
-
+  var seasonOwed = (season.length - seasonPaid.length) * fee;
   var bn = el("breakNote");
-  if(!n){ bn.textContent = "No players loaded."; }
-  else{
-    var collected = n * fee, diff = collected - TOTAL;
-    bn.innerHTML = diff >= 0
-      ? "With <b>" + n + "</b> skaters at " + JB.money0(fee) + ", you collect " + JB.money(collected) +
-        " against " + JB.money(TOTAL) + " of ice — <b>" + JB.money(diff) + " to spare</b>."
-      : "With <b>" + n + "</b> skaters at " + JB.money0(fee) + " you collect " + JB.money(collected) +
-        ", which is <b>" + JB.money(-diff) + " short</b> of the " + JB.money(TOTAL) +
-        " ice bill. Break-even is " + JB.money(breakEven) + " each, or " +
-        Math.ceil(TOTAL / fee) + " skaters at the current fee.";
+  if(!players.length){ bn.textContent = "No players loaded."; }
+  else if(needed <= 0){
+    bn.innerHTML = "The ice is <b>fully covered</b> \u2014 " + JB.money(collected) +
+      " collected against " + JB.money(TOTAL) +
+      (collected > TOTAL ? ", " + JB.money(collected - TOTAL) + " to spare." : ".");
+  }else{
+    bn.innerHTML = "<b>" + JB.money(needed) + "</b> still to come in. " +
+      (seasonOwed > 0
+        ? JB.money(seasonOwed) + " of that is season fees not yet paid" +
+          (perGame.length ? ", the rest comes in game by game." : ".")
+        : "It comes in game by game.");
   }
 
-  var paidCount = players.filter(function(p){ return p.paid; }).length;
-  el("stPaid").textContent = JB.money0(paidCount * fee);
-  el("stOwed").textContent = JB.money0((n - paidCount) * fee);
-  el("moneyNote").innerHTML = n
-    ? paidCount + " of " + n + " families have paid. " +
-      (paidCount * fee >= TOTAL ? "The ice is <b>fully covered</b>."
-        : "Still <b>" + JB.money(TOTAL - paidCount * fee) + "</b> short of the ice bill.")
-    : "";
+  el("moneyNote").innerHTML =
+    "<b>" + season.length + "</b> on the season fee \u00b7 " +
+    "<b>" + perGame.length + "</b> paying per game" +
+    (gameTotal ? " (" + JB.money(gameTotal) + " so far)" : "") +
+    (na.length ? " \u00b7 <b>" + na.length + "</b> not counted" : "");
 
   var pl = el("payList"); pl.innerHTML = "";
   players.forEach(function(p){
-    var row = document.createElement("div"); row.className = "row";
-    var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
+    var type = p.pay_type || "season";
+    var row = document.createElement("div");
+    row.className = "row" + (type === "na" ? " isOut" : "") + (type === "game" ? " pg" : "");
+
+    var nm = document.createElement("div"); nm.className = "name";
+    nm.textContent = p.name;
+    if(type === "game"){
+      var s2 = document.createElement("span"); s2.className = "sub2";
+      s2.textContent = "  \u00b7 " + JB.money(parseFloat(p.paid_amount) || 0) + " so far";
+      nm.appendChild(s2);
+    }
     row.appendChild(nm);
-    var b = document.createElement("button");
-    b.className = "btn sm " + (p.paid ? "in on" : "");
-    b.textContent = p.paid ? "Paid" : "Mark paid";
-    b.onclick = function(){
-      act(JB.rpc("coach_set_paid", { p_code: CODE, p_player: p.id, p_paid: !p.paid }));
+
+    var tchip = document.createElement("button");
+    tchip.className = "chip" + (type === "game" ? " pF" : type === "na" ? "" : " pD");
+    tchip.textContent = type === "game" ? "Game" : type === "na" ? "N/A" : "Season";
+    tchip.onclick = function(){
+      var nextT = type === "season" ? "game" : type === "game" ? "na" : "season";
+      act(JB.rpc("coach_set_pay_type", { p_code: CODE, p_player: p.id, p_type: nextT }));
     };
-    row.appendChild(b); pl.appendChild(row);
+    row.appendChild(tchip);
+
+    if(type === "season"){
+      var b = document.createElement("button");
+      b.className = "btn sm " + (p.paid ? "in on" : "");
+      b.textContent = p.paid ? "Paid" : "Mark paid";
+      b.onclick = function(){
+        act(JB.rpc("coach_set_paid", { p_code: CODE, p_player: p.id, p_paid: !p.paid }));
+      };
+      row.appendChild(b);
+    }else if(type === "game"){
+      var add = document.createElement("button");
+      add.className = "btn sm"; add.textContent = "+ Add";
+      add.onclick = function(){
+        var v = prompt("Amount " + p.name + " just paid?\n\nAdds to their running total of " +
+                       JB.money(parseFloat(p.paid_amount) || 0) + ".", String(gameRate));
+        if(v === null) return;
+        var n = parseFloat(v);
+        if(isNaN(n) || n === 0){ setStatus("That wasn't a number.", true); return; }
+        act(JB.rpc("coach_add_payment", { p_code: CODE, p_player: p.id, p_amount: n }),
+            "Recording\u2026");
+      };
+      row.appendChild(add);
+
+      var fix = document.createElement("button");
+      fix.className = "btn sm"; fix.textContent = "Edit";
+      fix.onclick = function(){
+        var cur = parseFloat(p.paid_amount) || 0;
+        var v = prompt("Set " + p.name + "'s total paid for the season.\n\nCurrently " +
+                       JB.money(cur) + ".", String(cur));
+        if(v === null) return;
+        var n = parseFloat(v);
+        if(isNaN(n)){ setStatus("That wasn't a number.", true); return; }
+        act(JB.rpc("coach_set_paid_amount", { p_code: CODE, p_player: p.id, p_amount: n }),
+            "Saving\u2026");
+      };
+      row.appendChild(fix);
+    }
+    pl.appendChild(row);
   });
 }
 
@@ -577,6 +652,13 @@ el("feeBtn").onclick = function(){
   if(isNaN(v) || v <= 0) return;
   act(JB.rpc("coach_set_fee", { p_code: CODE, p_fee: String(v) }), "Saving fee…")
     .then(function(){ el("feeInput").value = ""; });
+};
+
+el("rateBtn").onclick = function(){
+  var v = parseFloat(el("rateInput").value);
+  if(isNaN(v) || v <= 0) return;
+  act(JB.rpc("coach_set_game_rate", { p_code: CODE, p_rate: String(v) }), "Saving rate\u2026")
+    .then(function(){ el("rateInput").value = ""; });
 };
 
 setInterval(function(){ if(CODE && !document.hidden) refresh(true); }, 30000);

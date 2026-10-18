@@ -43,6 +43,10 @@ h1{margin:4px 0 2px;font-size:26px;letter-spacing:-.02em}
   border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .row .name{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row .sub2{font-size:12px;color:var(--muted);font-weight:400}
+/* a per-game row carries three controls, so let them drop below the name */
+.row.pg{flex-wrap:wrap}
+.row.pg .name{flex:1 0 100%;white-space:normal}
+.row.pg .chip,.row.pg .btn{flex:0 0 auto}
 .row.isIn{border-color:rgba(54,211,153,.45)}
 .row.isMaybe{border-color:rgba(245,181,61,.45)}
 .row.isOut{opacity:.5}
