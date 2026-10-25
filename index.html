@@ -575,25 +575,30 @@ function claim(job, card, claimBtn){
     var ph = document.createElement("option");
     ph.value = ""; ph.textContent = free.length ? "Choose your name\u2026" : "Everyone is already on this job";
     field.appendChild(ph);
+    /* deliberately no preselection: the parent must choose, so nobody
+       signs up by accident on a name left over from last time */
     free.forEach(function(v){
       var o = document.createElement("option");
       o.value = v.name; o.textContent = v.name;
-      if(v.name.toLowerCase() === myName().toLowerCase()) o.selected = true;
       field.appendChild(o);
     });
+    field.value = "";
     field.disabled = free.length === 0;
   }else{
     field = document.createElement("input");
     field.placeholder = "Your name";
-    field.value = myName();
     field.autocomplete = "off";
   }
   wrap.appendChild(field);
 
   var go = document.createElement("button");
   go.className = "btn"; go.textContent = "Sign up";
-  go.disabled = vols.length > 0 && free.length === 0;
-  go.onclick = function(){ save(job, field.value); };
+  /* stays dead until a name is actually chosen */
+  go.disabled = true;
+  function syncBtn(){ go.disabled = !(field.value || "").trim(); }
+  field.addEventListener("change", syncBtn);
+  field.addEventListener("input", syncBtn);
+  go.onclick = function(){ if(!go.disabled) save(job, field.value); };
   wrap.appendChild(go);
 
   var no = document.createElement("button");
