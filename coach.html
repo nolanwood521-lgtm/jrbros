@@ -152,6 +152,20 @@
         Run <code>supabase-migration-5.sql</code> in Supabase to turn them on.</div>
     </div>
     <div class="card">
+      <h2>Parent volunteers &middot; <span id="volCount">0</span></h2>
+      <div class="hint">Parents pick from this list when they claim a job, so they never
+        have to type a name. Removing someone here leaves their existing signups alone.</div>
+      <div class="list" id="volList"></div>
+      <div class="empty hide" id="volEmpty">Nobody added yet.</div>
+      <div class="addrow">
+        <input id="newVol" placeholder="Parent name" autocomplete="off" enterkeyhint="done">
+        <button class="btn" id="volAdd">Add</button>
+      </div>
+      <div class="banner hide" id="volWarn"><b>The volunteer list is not set up yet.</b>
+        Run <code>supabase-migration-7.sql</code> in Supabase to turn it on.</div>
+    </div>
+
+    <div class="card">
       <h2>Attendance so far</h2>
       <div class="list" id="attendList"></div>
       <div class="note" id="attendNote"></div>
@@ -226,8 +240,9 @@ var payReady = true;     // false when pay_type/paid_amount are not in the datab
 var skillReady = true;   // false when the skill migration has not been run
 var allChecks = {};     // session -> {player_id: status}
 var allLines = {};      // session -> {player_id: row}
-var anns = [], jobs = [], signups = [];
+var anns = [], jobs = [], signups = [], vols = [];
 var jobsReady = true;
+var volsReady = true;
 
 if(!JB.configured()) el("banner").innerHTML = JB.setupBanner();
 
@@ -302,7 +317,9 @@ function refresh(quiet){
     JB.select("volunteer_jobs", "select=id,title,details,session,slots,created_at&order=created_at.asc")
       .catch(function(){ jobsReady = false; return []; }),
     JB.select("volunteer_signups", "select=id,job_id,person,created_at&order=created_at.asc")
-      .catch(function(){ return []; })
+      .catch(function(){ return []; }),
+    JB.select("volunteers", "select=id,name,sort&order=sort.asc")
+      .catch(function(){ volsReady = false; return []; })
   ]).then(function(res){
     players = res[0];
     allChecks = {};
@@ -320,6 +337,7 @@ function refresh(quiet){
     anns = res[5] || [];
     jobs = res[6] || [];
     signups = res[7] || [];
+    vols = res[8] || [];
     render();
     setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
   }).catch(function(e){ setStatus(JB.explain(e), true); });
@@ -768,6 +786,7 @@ el("jobAdd").onclick = function(){
 function renderRoster(){
   el("rosterCount").textContent = players.length;
   el("skillWarn").classList.toggle("hide", skillReady);
+  renderVolunteers();
   var rl = el("rosterList"); rl.innerHTML = "";
   players.forEach(function(p){
     var row = document.createElement("div"); row.className = "row";
@@ -813,6 +832,48 @@ function renderRoster(){
     ? held + " sessions have been held so far."
     : "No sessions held yet — counts show against the full season.";
 }
+
+function renderVolunteers(){
+  el("volWarn").classList.toggle("hide", volsReady);
+  el("volCount").textContent = vols.length;
+  var box = el("volList"); box.innerHTML = "";
+  el("volEmpty").classList.toggle("hide", vols.length > 0 || !volsReady);
+
+  vols.forEach(function(v){
+    var taken = signups.filter(function(s){ return s.person === v.name; }).length;
+    var row = document.createElement("div"); row.className = "row";
+    var nm = document.createElement("div"); nm.className = "name";
+    nm.textContent = v.name;
+    if(taken){
+      var s2 = document.createElement("span"); s2.className = "sub2";
+      s2.textContent = "  \u00b7 " + taken + (taken === 1 ? " job" : " jobs");
+      nm.appendChild(s2);
+    }
+    row.appendChild(nm);
+    var rm = document.createElement("button");
+    rm.className = "btn sm danger"; rm.textContent = "Remove";
+    rm.onclick = function(){
+      if(!confirm("Remove " + v.name + " from the volunteer list?" +
+                  (taken ? "\n\nTheir " + taken + " job signup(s) stay as they are." : "")))
+        return;
+      act(JB.rpc("coach_remove_volunteer", { p_code: CODE, p_id: v.id }), "Removing\u2026");
+    };
+    row.appendChild(rm);
+    box.appendChild(row);
+  });
+}
+
+function addVolunteer(){
+  var i = el("newVol"), v = i.value.trim();
+  if(!v) return;
+  if(vols.some(function(x){ return x.name.toLowerCase() === v.toLowerCase(); })){
+    setStatus(v + " is already on the list.", true); return;
+  }
+  act(JB.rpc("coach_add_volunteer", { p_code: CODE, p_name: v }), "Adding\u2026")
+    .then(function(){ i.value = ""; i.focus(); });
+}
+el("volAdd").onclick = addVolunteer;
+el("newVol").addEventListener("keydown", function(e){ if(e.key === "Enter") addVolunteer(); });
 
 el("addBtn").onclick = addPlayer;
 el("newPlayer").addEventListener("keydown", function(e){ if(e.key === "Enter") addPlayer(); });

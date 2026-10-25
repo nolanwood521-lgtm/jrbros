@@ -94,7 +94,8 @@
   <section id="v-jobs" class="hide">
     <div class="card">
       <h2>Up for grabs</h2>
-      <div class="hint">Tap Claim to put your name down. Tap your own name again to let it go.</div>
+      <div class="hint">Tap Claim, then pick your name from the list.
+        Tap <b>Give it up</b> beside your own name to let a job go again.</div>
       <div id="openJobs"></div>
       <div class="empty hide" id="jobsEmpty">Nothing needs volunteers right now.</div>
     </div>
@@ -140,7 +141,7 @@ var SESSIONS = C.SESSIONS || [];
 
 var NEXT = JB.nextSession();   // the Check in tab is always this one
 var PICK = null;               // the date opened on the Schedule tab, if any
-var players = [], allChecks = {}, allLines = {}, anns = [], jobs = [], signups = [];
+var players = [], allChecks = {}, allLines = {}, anns = [], jobs = [], signups = [], vols = [];
 var busy = {};
 
 if(!JB.configured()) el("banner").innerHTML = JB.setupBanner();
@@ -182,7 +183,9 @@ function refresh(quiet){
     JB.select("volunteer_jobs", "select=id,title,details,session,slots,created_at&order=created_at.asc")
       .catch(function(){ return []; }),   // fine before the volunteer tables exist
     JB.select("volunteer_signups", "select=id,job_id,person,created_at&order=created_at.asc")
-      .catch(function(){ return []; })
+      .catch(function(){ return []; }),
+    JB.select("volunteers", "select=id,name,sort&order=sort.asc")
+      .catch(function(){ return []; })    // fine before the volunteer list exists
   ]).then(function(res){
     players = res[0];
     allChecks = {};
@@ -196,6 +199,7 @@ function refresh(quiet){
     anns = res[3] || [];
     jobs = res[4] || [];
     signups = res[5] || [];
+    vols = res[6] || [];
     NEXT = JB.nextSession();
     render();
     setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
@@ -526,15 +530,10 @@ function signupsFor(jobId){
   return signups.filter(function(s){ return s.job_id === jobId; });
 }
 
-function claim(job){
-  var who = prompt("Who's volunteering for \"" + job.title + "\"?\n\n" +
-                   "Your name is shown to the coach and the other parents.",
-                   myName());
-  if(who === null) return;
-  who = who.trim();
-  if(!who){ setStatus("Need a name to put down.", true); return; }
+function save(job, who){
+  who = (who || "").trim();
+  if(!who){ setStatus("Pick a name first.", true); return; }
   rememberName(who);
-
   setStatus("Claiming\u2026");
   JB.claimJob(job.id, who).then(function(){
     return refresh(true);
@@ -545,6 +544,54 @@ function claim(job){
     setStatus(msg, true);
     refresh(true).then(function(){ setStatus(msg, true); });
   });
+}
+
+/* Opens a name picker inside the job card. Parents choose from the coach's
+   volunteer list; if that list is empty they type a name instead. */
+function claim(job, card, claimBtn){
+  if(card.querySelector(".picker-row")) return;      // already open
+  claimBtn.classList.add("hide");
+
+  var wrap = document.createElement("div");
+  wrap.className = "addrow picker-row";
+
+  var taken = signupsFor(job.id).map(function(s){ return s.person.toLowerCase(); });
+  var free = vols.filter(function(v){ return taken.indexOf(v.name.toLowerCase()) === -1; });
+  var field;
+
+  if(vols.length){
+    field = document.createElement("select");
+    var ph = document.createElement("option");
+    ph.value = ""; ph.textContent = free.length ? "Choose your name\u2026" : "Everyone is already on this job";
+    field.appendChild(ph);
+    free.forEach(function(v){
+      var o = document.createElement("option");
+      o.value = v.name; o.textContent = v.name;
+      if(v.name.toLowerCase() === myName().toLowerCase()) o.selected = true;
+      field.appendChild(o);
+    });
+    field.disabled = free.length === 0;
+  }else{
+    field = document.createElement("input");
+    field.placeholder = "Your name";
+    field.value = myName();
+    field.autocomplete = "off";
+  }
+  wrap.appendChild(field);
+
+  var go = document.createElement("button");
+  go.className = "btn"; go.textContent = "Sign up";
+  go.disabled = vols.length > 0 && free.length === 0;
+  go.onclick = function(){ save(job, field.value); };
+  wrap.appendChild(go);
+
+  var no = document.createElement("button");
+  no.className = "btn"; no.textContent = "Cancel";
+  no.onclick = function(){ wrap.remove(); claimBtn.classList.remove("hide"); };
+  wrap.appendChild(no);
+
+  card.appendChild(wrap);
+  if(field.tagName === "INPUT") field.focus();
 }
 
 function release(job, signup){
@@ -613,7 +660,7 @@ function jobCard(job){
     claimBtn.className = "btn primary";
     claimBtn.style.marginTop = "12px";
     claimBtn.textContent = taken.length ? "Claim another slot" : "Claim";
-    claimBtn.onclick = function(){ claim(job); };
+    claimBtn.onclick = function(){ claim(job, card, claimBtn); };
     card.appendChild(claimBtn);
   }
   return card;
