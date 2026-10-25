@@ -118,19 +118,17 @@
       <div style="height:8px"></div>
       <textarea id="jobDetails" placeholder="Details (optional) — where to meet, what to bring"></textarea>
       <div class="addrow">
-        <select id="jobSession"></select>
-      </div>
-      <div class="addrow">
         <input id="jobSlots" type="number" inputmode="numeric" min="1" max="20" value="1">
         <button class="btn" id="jobAdd">Post job</button>
       </div>
-      <div class="note">Slots is how many people you need. Pick a Sunday, or leave it on
-        &quot;Any time this season&quot; for an ongoing job.</div>
+      <div class="note">Slots is how many people you need each week. Jobs are standing roles:
+        parents claim them one Sunday at a time, and the list clears every week.</div>
       <div class="banner hide" id="jobWarn"><b>The volunteer portal is not set up yet.</b>
         Run <code>supabase-migration-6.sql</code> in Supabase to turn it on.</div>
     </div>
     <div class="card">
-      <h2>Posted</h2>
+      <h2>This week &middot; <span id="jobWeek">&mdash;</span></h2>
+      <div class="hint">Signups shown are for the date picked on the Check in tab.</div>
       <div id="jobList"></div>
       <div class="empty hide" id="jobEmpty">Nothing posted yet.</div>
     </div>
@@ -316,7 +314,7 @@ function refresh(quiet){
       .catch(function(){ return []; }),
     JB.select("volunteer_jobs", "select=id,title,details,session,slots,created_at&order=created_at.asc")
       .catch(function(){ jobsReady = false; return []; }),
-    JB.select("volunteer_signups", "select=id,job_id,person,created_at&order=created_at.asc")
+    JB.select("volunteer_signups", "select=id,job_id,person,session,created_at&order=created_at.asc")
       .catch(function(){ return []; }),
     JB.select("volunteers", "select=id,name,sort&order=sort.asc")
       .catch(function(){ volsReady = false; return []; })
@@ -672,26 +670,15 @@ el("clearLinesBtn").onclick = function(){
 
 function renderJobs(){
   el("jobWarn").classList.toggle("hide", jobsReady);
-
-  /* the Sunday picker, built once from the schedule */
-  var sel = el("jobSession");
-  if(!sel.options.length){
-    var any = document.createElement("option");
-    any.value = ""; any.textContent = "Any time this season";
-    sel.appendChild(any);
-    var today = JB.todayISO();
-    (C.SESSIONS || []).filter(function(iso){ return iso >= today; }).forEach(function(iso){
-      var o = document.createElement("option");
-      o.value = iso; o.textContent = JB.fmt(iso, true);
-      sel.appendChild(o);
-    });
-  }
+  el("jobWeek").textContent = SESSION ? JB.fmt(SESSION, false) : "\u2014";
 
   var box = el("jobList"); box.innerHTML = "";
   el("jobEmpty").classList.toggle("hide", jobs.length > 0);
 
   jobs.forEach(function(job){
-    var taken = signups.filter(function(s){ return s.job_id === job.id; });
+    var taken = signups.filter(function(s){
+      return s.job_id === job.id && s.session === SESSION;
+    });
     var open = Math.max(job.slots - taken.length, 0);
 
     var card = document.createElement("div");
@@ -706,9 +693,6 @@ function renderJobs(){
     head.appendChild(tag);
     card.appendChild(head);
 
-    var w = document.createElement("div"); w.className = "when";
-    w.textContent = job.session ? JB.fmt(job.session, true) : "Any time this season";
-    card.appendChild(w);
 
     if(job.details){
       var det = document.createElement("div"); det.className = "body";
@@ -727,7 +711,8 @@ function renderJobs(){
         var rm = document.createElement("button");
         rm.className = "btn sm danger"; rm.textContent = "Remove";
         rm.onclick = function(){
-          if(!confirm("Take " + s.person + " off \"" + job.title + "\"?")) return;
+          if(!confirm("Take " + s.person + " off \"" + job.title + "\" for " +
+                      JB.fmt(SESSION, false) + "?")) return;
           act(JB.rpc("coach_remove_signup", { p_code: CODE, p_id: s.id }), "Updating\u2026");
         };
         row.appendChild(rm);
@@ -774,12 +759,10 @@ el("jobAdd").onclick = function(){
     p_code: CODE,
     p_title: title,
     p_details: el("jobDetails").value.trim() || null,
-    p_session: el("jobSession").value || null,
+    p_session: null,
     p_slots: slots
   }), "Posting\u2026").then(function(){
     el("jobTitle").value = ""; el("jobDetails").value = ""; el("jobSlots").value = "1";
-    /* reset the date too, or the next job silently inherits this one's Sunday */
-    el("jobSession").value = "";
   });
 };
 
@@ -840,13 +823,15 @@ function renderVolunteers(){
   el("volEmpty").classList.toggle("hide", vols.length > 0 || !volsReady);
 
   vols.forEach(function(v){
-    var taken = signups.filter(function(s){ return s.person === v.name; }).length;
+    var taken = signups.filter(function(s){
+      return s.person === v.name && s.session === SESSION;
+    }).length;
     var row = document.createElement("div"); row.className = "row";
     var nm = document.createElement("div"); nm.className = "name";
     nm.textContent = v.name;
     if(taken){
       var s2 = document.createElement("span"); s2.className = "sub2";
-      s2.textContent = "  \u00b7 " + taken + (taken === 1 ? " job" : " jobs");
+      s2.textContent = "  \u00b7 " + taken + (taken === 1 ? " job" : " jobs") + " this week";
       nm.appendChild(s2);
     }
     row.appendChild(nm);

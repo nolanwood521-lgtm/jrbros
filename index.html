@@ -92,10 +92,17 @@
 
   <!-- ===== JOBS ===== -->
   <section id="v-jobs" class="hide">
+    <div class="card next">
+      <span class="pill">Volunteering for</span>
+      <p class="date" id="jobsDate">&mdash;</p>
+      <div class="meta" id="jobsTime">3:00 &ndash; 4:30 PM</div>
+      <div class="count" id="jobsCount"></div>
+    </div>
+
     <div class="card">
       <h2>Up for grabs</h2>
-      <div class="hint">Tap Claim, then pick your name from the list.
-        Tap <b>Give it up</b> beside your own name to let a job go again.</div>
+      <div class="hint">Tap Claim, then pick your name. Jobs are for this Sunday only &mdash;
+        the list starts fresh each week. Tap <b>Give it up</b> beside your own name to let one go.</div>
       <div id="openJobs"></div>
       <div class="empty hide" id="jobsEmpty">Nothing needs volunteers right now.</div>
     </div>
@@ -182,7 +189,7 @@ function refresh(quiet){
       .catch(function(){ return []; }),   // fine before the announcements table exists
     JB.select("volunteer_jobs", "select=id,title,details,session,slots,created_at&order=created_at.asc")
       .catch(function(){ return []; }),   // fine before the volunteer tables exist
-    JB.select("volunteer_signups", "select=id,job_id,person,created_at&order=created_at.asc")
+    JB.select("volunteer_signups", "select=id,job_id,person,session,created_at&order=created_at.asc")
       .catch(function(){ return []; }),
     JB.select("volunteers", "select=id,name,sort&order=sort.asc")
       .catch(function(){ return []; })    // fine before the volunteer list exists
@@ -526,19 +533,23 @@ function rememberName(n){
   try{ localStorage.setItem("jrbros_name", n); }catch(e){}
 }
 
+/* claims for one job on the session being shown */
 function signupsFor(jobId){
-  return signups.filter(function(s){ return s.job_id === jobId; });
+  return signups.filter(function(s){
+    return s.job_id === jobId && s.session === NEXT;
+  });
 }
 
 function save(job, who){
   who = (who || "").trim();
   if(!who){ setStatus("Pick a name first.", true); return; }
+  if(!NEXT){ setStatus("The season is over \u2014 nothing to sign up for.", true); return; }
   rememberName(who);
   setStatus("Claiming\u2026");
-  JB.claimJob(job.id, who).then(function(){
+  JB.claimJob(job.id, who, NEXT).then(function(){
     return refresh(true);
   }).then(function(){
-    setStatus(who + " is down for " + job.title);
+    setStatus(who + " is down for " + job.title + " on " + JB.fmt(NEXT, false));
   }).catch(function(e){
     var msg = JB.explain(e);
     setStatus(msg, true);
@@ -595,7 +606,8 @@ function claim(job, card, claimBtn){
 }
 
 function release(job, signup){
-  if(!confirm("Take " + signup.person + " off \"" + job.title + "\"?")) return;
+  if(!confirm("Take " + signup.person + " off \"" + job.title + "\" for " +
+              JB.fmt(NEXT, false) + "?")) return;
   setStatus("Updating\u2026");
   JB.releaseJob(signup.id).then(function(){
     return refresh(true);
@@ -626,11 +638,6 @@ function jobCard(job){
   head.appendChild(tag);
   card.appendChild(head);
 
-  if(job.session){
-    var d = document.createElement("div"); d.className = "when";
-    d.textContent = JB.fmt(job.session, true);
-    card.appendChild(d);
-  }
   if(job.details){
     var det = document.createElement("div"); det.className = "body";
     det.style.fontSize = "14px"; det.textContent = job.details;
@@ -667,9 +674,18 @@ function jobCard(job){
 }
 
 function renderJobs(){
-  var today = JB.todayISO();
-  /* a dated job disappears once its Sunday has passed */
-  var live = jobs.filter(function(j){ return !j.session || j.session >= today; });
+  el("jobsDate").textContent = NEXT ? JB.fmt(NEXT, true) : "Season complete";
+  el("jobsTime").textContent = C.TIME_LABEL || "3:00 \u2013 4:30 PM";
+
+  var live = NEXT ? jobs : [];
+  var filledSlots = 0, totalSlots = 0;
+  live.forEach(function(j){
+    totalSlots += j.slots;
+    filledSlots += Math.min(signupsFor(j.id).length, j.slots);
+  });
+  el("jobsCount").textContent = totalSlots
+    ? filledSlots + " of " + totalSlots + " spots filled"
+    : "No jobs posted";
 
   var openOnes = live.filter(function(j){ return signupsFor(j.id).length < j.slots; });
   var fullOnes = live.filter(function(j){ return signupsFor(j.id).length >= j.slots; });

@@ -69,11 +69,11 @@ JB.clearCheckin = function(session, playerId){
 };
 
 /* Claim a volunteer slot. Parents have no login, so they type their own name. */
-JB.claimJob = function(jobId, person){
+JB.claimJob = function(jobId, person, session){
   return fetch(API + "/volunteer_signups", {
     method: "POST",
     headers: headers({ "Prefer": "return=representation" }),
-    body: JSON.stringify({ job_id: jobId, person: person })
+    body: JSON.stringify({ job_id: jobId, person: person, session: session })
   }).then(function(r){
     if(!r.ok) return r.text().then(function(t){ throw new Error(t || r.status); });
     return r.json().catch(function(){ return null; });
@@ -164,6 +164,8 @@ JB.explain = function(err){
   var col = m.match(/column [\w."]*?(pay_type|paid_amount|goalie|paid)\b[^"]*? does not exist/i);
   if(col || /42703|PGRST204/i.test(m))
     return "Database is a version behind \u2014 run the latest supabase-migration file.";
+  if(/duplicate key|23505|volunteer_signups_once/i.test(m))
+    return "That name is already down for this job this week.";
   if(/delete blocked by row level security/i.test(m))
     return "Can't clear a check-in yet \u2014 run supabase-migration-4.sql in Supabase.";
   if(/function .*does not exist|PGRST202/i.test(m))
