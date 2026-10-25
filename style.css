@@ -104,6 +104,13 @@ input:focus{outline:2px solid var(--ice-dim);outline-offset:1px}
 .chip.pF{background:rgba(76,195,255,.16);color:var(--ice);border-color:rgba(76,195,255,.42)}
 .chip.pD{background:rgba(245,181,61,.14);color:var(--warn);border-color:rgba(245,181,61,.42)}
 .chip.pG{background:rgba(54,211,153,.14);color:var(--in);border-color:rgba(54,211,153,.42)}
+/* skill chips: cool for beginners, warm for the strongest */
+.chip.sk{min-width:40px;font-size:12px}
+.chip.sk.s1{background:rgba(142,163,192,.14);color:#8ea3c0;border-color:rgba(142,163,192,.40)}
+.chip.sk.s2{background:rgba(76,195,255,.14);color:var(--ice);border-color:rgba(76,195,255,.40)}
+.chip.sk.s3{background:rgba(54,211,153,.14);color:var(--in);border-color:rgba(54,211,153,.40)}
+.chip.sk.s4{background:rgba(245,181,61,.14);color:var(--warn);border-color:rgba(245,181,61,.40)}
+.chip.sk.s5{background:rgba(240,107,94,.16);color:var(--out);border-color:rgba(240,107,94,.44)}
 
 .pchip{flex:0 0 auto;font-size:11px;font-weight:800;letter-spacing:.06em;border-radius:7px;
   padding:3px 8px;border:1px solid var(--line);color:var(--muted)}

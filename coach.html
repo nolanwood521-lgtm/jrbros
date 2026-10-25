@@ -82,12 +82,14 @@
     </div>
     <div class="card">
       <h2>Tools</h2>
-      <button class="btn ghost" id="autoBtn">Auto-split jerseys (overwrites)</button>
+      <button class="btn primary" id="balanceBtn">Balance teams by skill</button>
+      <div style="height:8px"></div>
+      <button class="btn ghost" id="autoBtn">Random split, ignore skill (overwrites)</button>
       <div style="height:8px"></div>
       <button class="btn ghost" id="clearLinesBtn">Clear this session's lines</button>
-      <div class="note">Nothing is assigned automatically \u2014 jerseys and positions stay
-        blank until you set them. Parents see the benches on their check-in page as soon as
-        you do.</div>
+      <div class="note" id="balanceNote">Nothing is assigned automatically \u2014 jerseys and
+        positions stay blank until you set them. Parents see the benches on their check-in
+        page as soon as you do, but never the skill ratings behind them.</div>
     </div>
   </section>
 
@@ -116,7 +118,11 @@
         <input id="newPlayer" placeholder="Player name" autocomplete="off" enterkeyhint="done">
         <button class="btn" id="addBtn">Add</button>
       </div>
-      <div class="note">Add &quot;(G)&quot; after a name to mark a goalie.</div>
+      <div class="note">Add &quot;(G)&quot; after a name to mark a goalie.
+        Tap the <b>S</b> chip to set skill, 1 (beginner) to 5 (strongest).
+        Skill ratings and payment details are never sent to the parents' page.</div>
+      <div class="banner hide" id="skillWarn"><b>Skill ratings are not set up yet.</b>
+        Run <code>supabase-migration-5.sql</code> in Supabase to turn them on.</div>
     </div>
     <div class="card">
       <h2>Attendance so far</h2>
@@ -127,6 +133,9 @@
 
   <!-- ===== MONEY ===== -->
   <section id="v-money" class="hide">
+    <div class="banner hide" id="payWarn"><b>Per-game payments are not set up yet.</b>
+      Run <code>supabase-migration-3.sql</code> in Supabase to turn on the Season / Per game /
+      N/A options. Everything else works meanwhile.</div>
     <div class="card">
       <h2>Ice cost</h2>
       <div class="stats">
@@ -185,6 +194,8 @@ var el = JB.el, C = JB.config;
 var SESSION = JB.nextSession();
 var CODE = null;
 var players = [], checks = {}, lines = {}, fee = 220, gameRate = 20;
+var payReady = true;     // false when pay_type/paid_amount are not in the database yet
+var skillReady = true;   // false when the skill migration has not been run
 var allChecks = {};     // session -> {player_id: status}
 var allLines = {};      // session -> {player_id: row}
 var anns = [];
@@ -242,7 +253,17 @@ function refresh(quiet){
   if(!CODE) return Promise.resolve();
   if(!quiet) setStatus("Loading…");
   return Promise.all([
-    JB.select("players", "select=id,name,goalie,sort,paid,pay_type,paid_amount&order=sort.asc"),
+    /* the coach reads every column (skill, payments) through the passcode.
+       Older databases fall back to the plain select. */
+    JB.rpc("coach_players", { p_code: CODE })
+      .catch(function(){
+        skillReady = false;
+        return JB.select("players", "select=id,name,goalie,sort,paid,pay_type,paid_amount&order=sort.asc")
+          .catch(function(){
+            payReady = false;
+            return JB.select("players", "select=id,name,goalie,sort,paid&order=sort.asc");
+          });
+      }),
     JB.select("checkins", "select=session,player_id,status"),
     JB.select("lines_assign", "select=session,player_id,jersey,pos"),
     JB.rpc("public_fee", {}),
@@ -466,6 +487,103 @@ function renderLines(){
   el("lineNote").innerHTML = parts.length ? parts.join(" · ") : "Both benches are set.";
 }
 
+/* Split the checked-in skaters into two benches of even strength.
+   Strongest first, each one going to whichever bench is currently weaker —
+   with the smaller bench winning any tie, so the counts stay level too.
+   Goalies are dealt separately and positions are left untouched. */
+function balanceBySkill(list){
+  var teams = { light: { players: [], skill: 0 }, dark: { players: [], skill: 0 } };
+
+  function place(p, forced){
+    var t = forced;
+    if(!t){
+      /* even benches come first \u2014 a 2-on-6 is no use however well matched.
+         Only when the counts are level does strength decide. */
+      if(teams.light.players.length !== teams.dark.players.length)
+        t = teams.light.players.length < teams.dark.players.length ? "light" : "dark";
+      else if(teams.light.skill !== teams.dark.skill)
+        t = teams.light.skill < teams.dark.skill ? "light" : "dark";
+      else t = Math.random() < 0.5 ? "light" : "dark";
+    }
+    teams[t].players.push(p);
+    teams[t].skill += (parseInt(p.skill, 10) || 3);
+    return t;
+  }
+
+  var keepers = list.filter(function(p){ return p.goalie; });
+  var skaters = list.filter(function(p){ return !p.goalie; });
+
+  /* one keeper per bench where possible */
+  keepers.forEach(function(p, ix){ place(p, ix < 2 ? (ix ? "dark" : "light") : null); });
+
+  skaters.sort(function(a, b){
+    return (parseInt(b.skill,10) || 3) - (parseInt(a.skill,10) || 3);
+  });
+  skaters.forEach(function(p){ place(p, null); });
+
+  /* Polish: try swapping one skater for another across the benches.
+     Any swap that narrows the strength gap is kept. Counts never change,
+     and goalies are left where they are. */
+  function strength(t){ return teams[t].skill; }
+  for(var pass = 0; pass < 40; pass++){
+    var gap = Math.abs(strength("light") - strength("dark"));
+    if(gap <= 1) break;
+    var best = null;
+    teams.light.players.forEach(function(a){
+      if(a.goalie) return;
+      teams.dark.players.forEach(function(b){
+        if(b.goalie) return;
+        var sa = parseInt(a.skill,10) || 3, sb = parseInt(b.skill,10) || 3;
+        if(sa === sb) return;
+        var after = Math.abs((strength("light") - sa + sb) - (strength("dark") - sb + sa));
+        if(after < gap && (!best || after < best.after)) best = { a:a, b:b, after:after };
+      });
+    });
+    if(!best) break;
+    var li = teams.light.players.indexOf(best.a), di = teams.dark.players.indexOf(best.b);
+    teams.light.players[li] = best.b; teams.dark.players[di] = best.a;
+    var sa2 = parseInt(best.a.skill,10) || 3, sb2 = parseInt(best.b.skill,10) || 3;
+    teams.light.skill += sb2 - sa2;
+    teams.dark.skill  += sa2 - sb2;
+  }
+
+  return teams;
+}
+
+el("balanceBtn").onclick = function(){
+  var avail = players.filter(function(p){ return checks[p.id] === "in"; });
+  if(!avail.length){ setStatus("Nobody is checked in yet.", true); return; }
+  if(!skillReady){
+    setStatus("Run supabase-migration-5.sql first to use skill ratings.", true); return;
+  }
+
+  var teams = balanceBySkill(avail);
+  var li = teams.light, dk = teams.dark;
+  var gap = Math.abs(li.skill - dk.skill);
+
+  if(!confirm("Balance " + avail.length + " skaters on " + JB.fmt(SESSION, false) + "?\n\n" +
+              "Light: " + li.players.length + " skaters, strength " + li.skill + "\n" +
+              "Dark:  " + dk.players.length + " skaters, strength " + dk.skill + "\n" +
+              (gap ? "Difference: " + gap : "Dead even") + "\n\n" +
+              "This overwrites jerseys you set by hand. Positions are left alone."))
+    return;
+
+  var jobs = [];
+  ["light","dark"].forEach(function(team){
+    teams[team].players.forEach(function(p){
+      var L = lines[p.id] || {};
+      jobs.push(JB.rpc("coach_set_line", {
+        p_code: CODE, p_session: SESSION, p_player: p.id,
+        p_jersey: team, p_pos: L.pos || null
+      }));
+    });
+  });
+  act(Promise.all(jobs), "Balancing\u2026").then(function(){
+    setStatus("Balanced \u2014 Light " + li.skill + " vs Dark " + dk.skill +
+              (gap ? " (" + gap + " apart)" : " (dead even)"));
+  });
+};
+
 el("autoBtn").onclick = function(){
   var avail = players.filter(function(p){ return checks[p.id] === "in"; });
   if(!avail.length){ setStatus("Nobody is checked in yet.", true); return; }
@@ -500,12 +618,28 @@ el("clearLinesBtn").onclick = function(){
 
 function renderRoster(){
   el("rosterCount").textContent = players.length;
+  el("skillWarn").classList.toggle("hide", skillReady);
   var rl = el("rosterList"); rl.innerHTML = "";
   players.forEach(function(p){
     var row = document.createElement("div"); row.className = "row";
     var nm = document.createElement("div"); nm.className = "name"; nm.textContent = p.name;
     row.appendChild(nm);
     if(p.goalie){ var g = document.createElement("span"); g.className = "gtag"; g.textContent = "G"; row.appendChild(g); }
+
+    if(skillReady){
+      var sk = parseInt(p.skill, 10); if(isNaN(sk)) sk = 3;
+      var sc = document.createElement("button");
+      sc.className = "chip sk s" + sk;
+      sc.textContent = "S" + sk;
+      sc.title = "Skill " + sk + " of 5";
+      sc.onclick = function(){
+        act(JB.rpc("coach_set_skill", {
+          p_code: CODE, p_player: p.id, p_skill: (sk % 5) + 1
+        }));
+      };
+      row.appendChild(sc);
+    }
+
     var rm = document.createElement("button"); rm.className = "btn sm danger"; rm.textContent = "Remove";
     rm.onclick = function(){
       if(!confirm("Remove " + p.name + "? This also removes their check-ins and line assignments.")) return;
@@ -544,6 +678,7 @@ function addPlayer(){
 
 function renderMoney(){
   var TOTAL = C.SEASON_TOTAL, PER = C.COST_PER_SESSION;
+  el("payWarn").classList.toggle("hide", payReady);
 
   var season = players.filter(function(p){ return (p.pay_type || "season") === "season"; });
   var perGame = players.filter(function(p){ return p.pay_type === "game"; });
@@ -598,14 +733,16 @@ function renderMoney(){
     }
     row.appendChild(nm);
 
-    var tchip = document.createElement("button");
-    tchip.className = "chip" + (type === "game" ? " pF" : type === "na" ? "" : " pD");
-    tchip.textContent = type === "game" ? "Game" : type === "na" ? "N/A" : "Season";
-    tchip.onclick = function(){
-      var nextT = type === "season" ? "game" : type === "game" ? "na" : "season";
-      act(JB.rpc("coach_set_pay_type", { p_code: CODE, p_player: p.id, p_type: nextT }));
-    };
-    row.appendChild(tchip);
+    if(payReady){
+      var tchip = document.createElement("button");
+      tchip.className = "chip" + (type === "game" ? " pF" : type === "na" ? "" : " pD");
+      tchip.textContent = type === "game" ? "Game" : type === "na" ? "N/A" : "Season";
+      tchip.onclick = function(){
+        var nextT = type === "season" ? "game" : type === "game" ? "na" : "season";
+        act(JB.rpc("coach_set_pay_type", { p_code: CODE, p_player: p.id, p_type: nextT }));
+      };
+      row.appendChild(tchip);
+    }
 
     if(type === "season"){
       var b = document.createElement("button");
