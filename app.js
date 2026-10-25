@@ -48,14 +48,53 @@ JB.upsertCheckin = function(session, playerId, status){
   });
 };
 
-/* Clear a check-in, putting the child back to "not answered". */
+/* Clear a check-in, putting the child back to "not answered".
+   A delete blocked by row-level security returns 204 and removes nothing, so we ask
+   for the deleted rows back and treat an empty result as "permission missing". */
 JB.clearCheckin = function(session, playerId){
   return fetch(API + "/checkins?session=eq." + encodeURIComponent(session) +
                       "&player_id=eq." + encodeURIComponent(playerId), {
     method: "DELETE",
-    headers: headers({ "Prefer": "return=minimal" })
+    headers: headers({ "Prefer": "return=representation" })
   }).then(function(r){
     if(!r.ok) return r.text().then(function(t){ throw new Error(t || r.status); });
+    return r.json().catch(function(){ return null; });
+  }).then(function(rows){
+    if(Array.isArray(rows) && rows.length === 0){
+      var e = new Error("delete blocked by row level security");
+      e.needsMigration = true;
+      throw e;
+    }
+  });
+};
+
+/* Claim a volunteer slot. Parents have no login, so they type their own name. */
+JB.claimJob = function(jobId, person){
+  return fetch(API + "/volunteer_signups", {
+    method: "POST",
+    headers: headers({ "Prefer": "return=representation" }),
+    body: JSON.stringify({ job_id: jobId, person: person })
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t || r.status); });
+    return r.json().catch(function(){ return null; });
+  });
+};
+
+/* Release a slot again. Like clearing a check-in, a blocked delete removes
+   nothing without erroring, so we ask for the rows back and check. */
+JB.releaseJob = function(signupId){
+  return fetch(API + "/volunteer_signups?id=eq." + encodeURIComponent(signupId), {
+    method: "DELETE",
+    headers: headers({ "Prefer": "return=representation" })
+  }).then(function(r){
+    if(!r.ok) return r.text().then(function(t){ throw new Error(t || r.status); });
+    return r.json().catch(function(){ return null; });
+  }).then(function(rows){
+    if(Array.isArray(rows) && rows.length === 0){
+      var e = new Error("delete blocked by row level security");
+      e.needsMigration = true;
+      throw e;
+    }
   });
 };
 
@@ -119,10 +158,18 @@ JB.explain = function(err){
   var m = String(err && err.message || err || "");
   if(/bad passcode/i.test(m)) return "That passcode wasn't right.";
   if(/Failed to fetch|NetworkError|load failed/i.test(m))
-    return "Couldn't reach the database — check your connection.";
+    return "Couldn't reach the database \u2014 check your connection.";
   if(/JWT|apikey|401|403/i.test(m)) return "The anon key in config.js looks wrong.";
-  if(/does not exist|42P01|PGRST205/i.test(m))
-    return "Tables are missing — run supabase-setup.sql in Supabase first.";
+  /* a missing column means a migration has not been run yet */
+  var col = m.match(/column [\w."]*?(pay_type|paid_amount|goalie|paid)\b[^"]*? does not exist/i);
+  if(col || /42703|PGRST204/i.test(m))
+    return "Database is a version behind \u2014 run the latest supabase-migration file.";
+  if(/delete blocked by row level security/i.test(m))
+    return "Can't clear a check-in yet \u2014 run supabase-migration-4.sql in Supabase.";
+  if(/function .*does not exist|PGRST202/i.test(m))
+    return "A database function is missing \u2014 run the latest supabase-migration file.";
+  if(/relation .* does not exist|42P01|PGRST205/i.test(m))
+    return "Tables are missing \u2014 run supabase-setup.sql in Supabase first.";
   return m.slice(0, 160) || "Something went wrong.";
 };
 

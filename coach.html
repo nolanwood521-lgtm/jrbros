@@ -109,6 +109,33 @@
     </div>
   </section>
 
+  <!-- ===== JOBS ===== -->
+  <section id="v-jobs" class="hide">
+    <div class="card">
+      <h2>Post a job</h2>
+      <div class="hint">Parents see these on their Jobs tab and claim them.</div>
+      <input id="jobTitle" placeholder="Job, e.g. Run the clock" autocomplete="off">
+      <div style="height:8px"></div>
+      <textarea id="jobDetails" placeholder="Details (optional) — where to meet, what to bring"></textarea>
+      <div class="addrow">
+        <select id="jobSession"></select>
+      </div>
+      <div class="addrow">
+        <input id="jobSlots" type="number" inputmode="numeric" min="1" max="20" value="1">
+        <button class="btn" id="jobAdd">Post job</button>
+      </div>
+      <div class="note">Slots is how many people you need. Pick a Sunday, or leave it on
+        &quot;Any time this season&quot; for an ongoing job.</div>
+      <div class="banner hide" id="jobWarn"><b>The volunteer portal is not set up yet.</b>
+        Run <code>supabase-migration-6.sql</code> in Supabase to turn it on.</div>
+    </div>
+    <div class="card">
+      <h2>Posted</h2>
+      <div id="jobList"></div>
+      <div class="empty hide" id="jobEmpty">Nothing posted yet.</div>
+    </div>
+  </section>
+
   <!-- ===== ROSTER ===== -->
   <section id="v-roster" class="hide">
     <div class="card">
@@ -180,6 +207,7 @@
   <button data-v="checkin" class="on">Check in</button>
   <button data-v="lines">Lines</button>
   <button data-v="news">News</button>
+  <button data-v="jobs">Jobs</button>
   <button data-v="roster">Roster</button>
   <button data-v="money">Money</button>
 </div></nav>
@@ -198,7 +226,8 @@ var payReady = true;     // false when pay_type/paid_amount are not in the datab
 var skillReady = true;   // false when the skill migration has not been run
 var allChecks = {};     // session -> {player_id: status}
 var allLines = {};      // session -> {player_id: row}
-var anns = [];
+var anns = [], jobs = [], signups = [];
+var jobsReady = true;
 
 if(!JB.configured()) el("banner").innerHTML = JB.setupBanner();
 
@@ -230,7 +259,7 @@ try{
 
 /* ---------- nav ---------- */
 function show(v){
-  ["checkin","lines","news","roster","money"].forEach(function(x){
+  ["checkin","lines","news","jobs","roster","money"].forEach(function(x){
     el("v-" + x).classList.toggle("hide", x !== v);
   });
   document.querySelectorAll("nav button").forEach(function(b){
@@ -269,6 +298,10 @@ function refresh(quiet){
     JB.rpc("public_fee", {}),
     JB.rpc("public_game_rate", {}).catch(function(){ return null; }),
     JB.select("announcements", "select=id,body,created_at&order=created_at.desc")
+      .catch(function(){ return []; }),
+    JB.select("volunteer_jobs", "select=id,title,details,session,slots,created_at&order=created_at.asc")
+      .catch(function(){ jobsReady = false; return []; }),
+    JB.select("volunteer_signups", "select=id,job_id,person,created_at&order=created_at.asc")
       .catch(function(){ return []; })
   ]).then(function(res){
     players = res[0];
@@ -285,6 +318,8 @@ function refresh(quiet){
     fee = parseFloat(res[3]) || 220;
     gameRate = parseFloat(res[4]) || 20;
     anns = res[5] || [];
+    jobs = res[6] || [];
+    signups = res[7] || [];
     render();
     setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
   }).catch(function(e){ setStatus(JB.explain(e), true); });
@@ -304,6 +339,7 @@ function render(){
   renderCheckin();
   renderLines();
   renderNews();
+  renderJobs();
   renderRoster();
   renderMoney();
 }
@@ -614,6 +650,119 @@ el("autoBtn").onclick = function(){
 el("clearLinesBtn").onclick = function(){
   if(!confirm("Clear jerseys and positions for " + JB.fmt(SESSION, false) + "?")) return;
   act(JB.rpc("coach_clear_lines", { p_code: CODE, p_session: SESSION }), "Clearing…");
+};
+
+function renderJobs(){
+  el("jobWarn").classList.toggle("hide", jobsReady);
+
+  /* the Sunday picker, built once from the schedule */
+  var sel = el("jobSession");
+  if(!sel.options.length){
+    var any = document.createElement("option");
+    any.value = ""; any.textContent = "Any time this season";
+    sel.appendChild(any);
+    var today = JB.todayISO();
+    (C.SESSIONS || []).filter(function(iso){ return iso >= today; }).forEach(function(iso){
+      var o = document.createElement("option");
+      o.value = iso; o.textContent = JB.fmt(iso, true);
+      sel.appendChild(o);
+    });
+  }
+
+  var box = el("jobList"); box.innerHTML = "";
+  el("jobEmpty").classList.toggle("hide", jobs.length > 0);
+
+  jobs.forEach(function(job){
+    var taken = signups.filter(function(s){ return s.job_id === job.id; });
+    var open = Math.max(job.slots - taken.length, 0);
+
+    var card = document.createElement("div");
+    card.className = "ann" + (open ? " top" : "");
+
+    var head = document.createElement("div"); head.className = "jobhead";
+    var t = document.createElement("div"); t.className = "jobtitle"; t.textContent = job.title;
+    head.appendChild(t);
+    var tag = document.createElement("span");
+    tag.className = "pchip " + (open ? "f" : "g");
+    tag.textContent = taken.length + " of " + job.slots;
+    head.appendChild(tag);
+    card.appendChild(head);
+
+    var w = document.createElement("div"); w.className = "when";
+    w.textContent = job.session ? JB.fmt(job.session, true) : "Any time this season";
+    card.appendChild(w);
+
+    if(job.details){
+      var det = document.createElement("div"); det.className = "body";
+      det.style.fontSize = "14px"; det.textContent = job.details;
+      card.appendChild(det);
+    }
+
+    if(taken.length){
+      var list = document.createElement("div"); list.className = "list";
+      list.style.marginTop = "10px";
+      taken.forEach(function(s){
+        var row = document.createElement("div"); row.className = "row";
+        var nm = document.createElement("div"); nm.className = "name";
+        nm.textContent = s.person;
+        row.appendChild(nm);
+        var rm = document.createElement("button");
+        rm.className = "btn sm danger"; rm.textContent = "Remove";
+        rm.onclick = function(){
+          if(!confirm("Take " + s.person + " off \"" + job.title + "\"?")) return;
+          act(JB.rpc("coach_remove_signup", { p_code: CODE, p_id: s.id }), "Updating\u2026");
+        };
+        row.appendChild(rm);
+        list.appendChild(row);
+      });
+      card.appendChild(list);
+    }
+
+    var tools = document.createElement("div");
+    tools.className = "addrow"; tools.style.marginTop = "12px";
+    var slots = document.createElement("input");
+    slots.type = "number"; slots.min = "1"; slots.max = "20";
+    slots.value = job.slots; slots.inputMode = "numeric";
+    tools.appendChild(slots);
+    var setBtn = document.createElement("button");
+    setBtn.className = "btn"; setBtn.textContent = "Slots";
+    setBtn.onclick = function(){
+      var n = parseInt(slots.value, 10);
+      if(isNaN(n) || n < 1){ setStatus("Slots must be at least 1.", true); return; }
+      act(JB.rpc("coach_set_job_slots", { p_code: CODE, p_id: job.id, p_slots: n }), "Saving\u2026");
+    };
+    tools.appendChild(setBtn);
+    var del = document.createElement("button");
+    del.className = "btn danger"; del.textContent = "Delete";
+    del.onclick = function(){
+      if(!confirm("Delete \"" + job.title + "\"?" +
+                  (taken.length ? "\n\n" + taken.length + " parent(s) signed up will lose it." : "")))
+        return;
+      act(JB.rpc("coach_delete_job", { p_code: CODE, p_id: job.id }), "Deleting\u2026");
+    };
+    tools.appendChild(del);
+    card.appendChild(tools);
+
+    box.appendChild(card);
+  });
+}
+
+el("jobAdd").onclick = function(){
+  var title = el("jobTitle").value.trim();
+  if(!title){ setStatus("Give the job a title.", true); return; }
+  var slots = parseInt(el("jobSlots").value, 10);
+  if(isNaN(slots) || slots < 1) slots = 1;
+  act(JB.rpc("coach_add_job", {
+    p_code: CODE,
+    p_title: title,
+    p_details: el("jobDetails").value.trim() || null,
+    p_session: el("jobSession").value || null,
+    p_slots: slots
+  }), "Posting\u2026").then(function(){
+    el("jobTitle").value = ""; el("jobDetails").value = ""; el("jobSlots").value = "1";
+    /* reset the date too, or the next job silently inherits this one's Sunday */
+    el("jobSession").value = "";
+  });
 };
 
 function renderRoster(){

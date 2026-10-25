@@ -37,8 +37,9 @@
 
     <div class="card">
       <h2>Check in</h2>
-      <div class="hint">Tap In, Maybe or Out beside your child. Tap the same button again
-        to clear it. Away on a later date? Book it ahead on the Schedule tab.</div>
+      <div class="hint">Tap In, Maybe or Out beside your child. Tapped the wrong one?
+        Tap the lit button again to clear it, or use Undo at the bottom.
+        Away on a later date? Book it ahead on the Schedule tab.</div>
       <div class="list" id="checkinList"></div>
       <div class="empty hide" id="checkinEmpty">Nothing to show yet.</div>
     </div>
@@ -89,6 +90,20 @@
     </div>
   </section>
 
+  <!-- ===== JOBS ===== -->
+  <section id="v-jobs" class="hide">
+    <div class="card">
+      <h2>Up for grabs</h2>
+      <div class="hint">Tap Claim to put your name down. Tap your own name again to let it go.</div>
+      <div id="openJobs"></div>
+      <div class="empty hide" id="jobsEmpty">Nothing needs volunteers right now.</div>
+    </div>
+    <div class="card hide" id="filledCard">
+      <h2>Already covered</h2>
+      <div id="filledJobs"></div>
+    </div>
+  </section>
+
   <!-- ===== NEWS ===== -->
   <section id="v-news">
     <div class="card next">
@@ -111,6 +126,7 @@
 <nav><div class="wrap">
   <button data-v="checkin">Check in</button>
   <button data-v="schedule">Schedule</button>
+  <button data-v="jobs">Jobs<span id="jobsDot"></span></button>
   <button data-v="news" class="on">News<span id="newsDot"></span></button>
 </div></nav>
 
@@ -124,14 +140,14 @@ var SESSIONS = C.SESSIONS || [];
 
 var NEXT = JB.nextSession();   // the Check in tab is always this one
 var PICK = null;               // the date opened on the Schedule tab, if any
-var players = [], allChecks = {}, allLines = {}, anns = [];
+var players = [], allChecks = {}, allLines = {}, anns = [], jobs = [], signups = [];
 var busy = {};
 
 if(!JB.configured()) el("banner").innerHTML = JB.setupBanner();
 
 /* ---------- nav ---------- */
 function show(v){
-  ["checkin","schedule","news"].forEach(function(x){
+  ["checkin","schedule","jobs","news"].forEach(function(x){
     el("v-" + x).classList.toggle("hide", x !== v);
   });
   document.querySelectorAll("nav button").forEach(function(b){
@@ -162,7 +178,11 @@ function refresh(quiet){
     JB.select("checkins", "select=session,player_id,status"),
     JB.select("lines_assign", "select=session,player_id,jersey,pos"),
     JB.select("announcements", "select=id,body,created_at&order=created_at.desc")
-      .catch(function(){ return []; })    // fine before the announcements table exists
+      .catch(function(){ return []; }),   // fine before the announcements table exists
+    JB.select("volunteer_jobs", "select=id,title,details,session,slots,created_at&order=created_at.asc")
+      .catch(function(){ return []; }),   // fine before the volunteer tables exist
+    JB.select("volunteer_signups", "select=id,job_id,person,created_at&order=created_at.asc")
+      .catch(function(){ return []; })
   ]).then(function(res){
     players = res[0];
     allChecks = {};
@@ -174,6 +194,8 @@ function refresh(quiet){
       (allLines[r.session] = allLines[r.session] || {})[r.player_id] = r;
     });
     anns = res[3] || [];
+    jobs = res[4] || [];
+    signups = res[5] || [];
     NEXT = JB.nextSession();
     render();
     setStatus("Updated " + new Date().toLocaleTimeString("en-CA",{hour:"numeric",minute:"2-digit"}));
@@ -208,7 +230,10 @@ function tap(p, status, iso){
     var m = target
       ? p.name + " is " + WORD[target] + " for " + JB.fmt(iso, false)
       : p.name + " cleared for " + JB.fmt(iso, false);
-    var back = (previous === undefined) ? null : function(){ tapTo(p, previous, iso); };
+    /* every action is undoable: back to the old answer, or back to blank */
+    var back = (previous === undefined)
+      ? function(){ clearTo(p, iso); }
+      : function(){ tapTo(p, previous, iso); };
     say(m, back);
     return refresh(true).then(function(){ say(m, back); });
   }).catch(function(e){
@@ -216,7 +241,29 @@ function tap(p, status, iso){
     else if(allChecks[iso]) delete allChecks[iso][p.id];
     delete busy[key];
     render();
-    setStatus(JB.explain(e), true);
+    var msg = JB.explain(e);
+    setStatus(msg, true);
+    /* resync with the database, then put the message back so it is not overwritten */
+    refresh(true).then(function(){ setStatus(msg, true); });
+  });
+}
+
+/* used by Undo when there was no previous answer: put it back to blank */
+function clearTo(p, iso){
+  var key = iso + ":" + p.id;
+  if(busy[key]) return;
+  busy[key] = true;
+  if(allChecks[iso]) delete allChecks[iso][p.id];
+  render();
+  JB.clearCheckin(iso, p.id).then(function(){
+    delete busy[key]; render();
+    say(p.name + " cleared for " + JB.fmt(iso, false), null);
+    return refresh(true);
+  }).catch(function(e){
+    delete busy[key];
+    var msg = JB.explain(e);
+    setStatus(msg, true);
+    refresh(true).then(function(){ setStatus(msg, true); });
   });
 }
 
@@ -298,6 +345,7 @@ function render(){
   renderCheckin();
   renderSchedule();
   renderAhead();
+  renderJobs();
   renderNews();
   renderNewsDot();
 }
@@ -463,6 +511,135 @@ function renderAhead(){
 }
 el("aheadClose").onclick = function(){ PICK = null; render(); window.scrollTo(0,0); };
 el("toCheckin").onclick = function(){ show("checkin"); };
+
+/* ---------- volunteer jobs ---------- */
+
+/* remember this phone's volunteer name so a parent types it once */
+function myName(){
+  try{ return localStorage.getItem("jrbros_name") || ""; }catch(e){ return ""; }
+}
+function rememberName(n){
+  try{ localStorage.setItem("jrbros_name", n); }catch(e){}
+}
+
+function signupsFor(jobId){
+  return signups.filter(function(s){ return s.job_id === jobId; });
+}
+
+function claim(job){
+  var who = prompt("Who's volunteering for \"" + job.title + "\"?\n\n" +
+                   "Your name is shown to the coach and the other parents.",
+                   myName());
+  if(who === null) return;
+  who = who.trim();
+  if(!who){ setStatus("Need a name to put down.", true); return; }
+  rememberName(who);
+
+  setStatus("Claiming\u2026");
+  JB.claimJob(job.id, who).then(function(){
+    return refresh(true);
+  }).then(function(){
+    setStatus(who + " is down for " + job.title);
+  }).catch(function(e){
+    var msg = JB.explain(e);
+    setStatus(msg, true);
+    refresh(true).then(function(){ setStatus(msg, true); });
+  });
+}
+
+function release(job, signup){
+  if(!confirm("Take " + signup.person + " off \"" + job.title + "\"?")) return;
+  setStatus("Updating\u2026");
+  JB.releaseJob(signup.id).then(function(){
+    return refresh(true);
+  }).then(function(){
+    setStatus(signup.person + " taken off " + job.title);
+  }).catch(function(e){
+    var msg = JB.explain(e);
+    setStatus(msg, true);
+    refresh(true).then(function(){ setStatus(msg, true); });
+  });
+}
+
+function jobCard(job){
+  var taken = signupsFor(job.id);
+  var open = Math.max(job.slots - taken.length, 0);
+  var mine = myName().toLowerCase();
+
+  var card = document.createElement("div");
+  card.className = "ann" + (open ? " top" : "");
+
+  var head = document.createElement("div");
+  head.className = "jobhead";
+  var t = document.createElement("div"); t.className = "jobtitle"; t.textContent = job.title;
+  head.appendChild(t);
+  var tag = document.createElement("span");
+  tag.className = "pchip " + (open ? "f" : "g");
+  tag.textContent = open ? open + " of " + job.slots + " open" : "full";
+  head.appendChild(tag);
+  card.appendChild(head);
+
+  if(job.session){
+    var d = document.createElement("div"); d.className = "when";
+    d.textContent = JB.fmt(job.session, true);
+    card.appendChild(d);
+  }
+  if(job.details){
+    var det = document.createElement("div"); det.className = "body";
+    det.style.fontSize = "14px"; det.textContent = job.details;
+    card.appendChild(det);
+  }
+
+  if(taken.length){
+    var list = document.createElement("div"); list.className = "list";
+    list.style.marginTop = "10px";
+    taken.forEach(function(s){
+      var row = document.createElement("div"); row.className = "row";
+      var nm = document.createElement("div"); nm.className = "name"; nm.textContent = s.person;
+      row.appendChild(nm);
+      var isMine = mine && s.person.toLowerCase() === mine;
+      var b = document.createElement("button");
+      b.className = "btn sm" + (isMine ? " danger" : "");
+      b.textContent = isMine ? "Give it up" : "Remove";
+      b.onclick = function(){ release(job, s); };
+      row.appendChild(b);
+      list.appendChild(row);
+    });
+    card.appendChild(list);
+  }
+
+  if(open){
+    var claimBtn = document.createElement("button");
+    claimBtn.className = "btn primary";
+    claimBtn.style.marginTop = "12px";
+    claimBtn.textContent = taken.length ? "Claim another slot" : "Claim";
+    claimBtn.onclick = function(){ claim(job); };
+    card.appendChild(claimBtn);
+  }
+  return card;
+}
+
+function renderJobs(){
+  var today = JB.todayISO();
+  /* a dated job disappears once its Sunday has passed */
+  var live = jobs.filter(function(j){ return !j.session || j.session >= today; });
+
+  var openOnes = live.filter(function(j){ return signupsFor(j.id).length < j.slots; });
+  var fullOnes = live.filter(function(j){ return signupsFor(j.id).length >= j.slots; });
+
+  var box = el("openJobs"); box.innerHTML = "";
+  el("jobsEmpty").classList.toggle("hide", openOnes.length > 0);
+  openOnes.forEach(function(j){ box.appendChild(jobCard(j)); });
+
+  el("filledCard").classList.toggle("hide", fullOnes.length === 0);
+  var fbox = el("filledJobs"); fbox.innerHTML = "";
+  fullOnes.forEach(function(j){ fbox.appendChild(jobCard(j)); });
+
+  /* a dot on the tab while anything still needs people */
+  var dot = el("jobsDot");
+  dot.textContent = openOnes.length ? " \u2022" : "";
+  dot.style.color = "var(--warn)";
+}
 
 /* ---------- news ---------- */
 function latestAnnTime(){
